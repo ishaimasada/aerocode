@@ -1,4 +1,4 @@
-import math
+import numpy
 import os
 import cantera
 
@@ -7,7 +7,7 @@ filepath = os.path.abspath(__file__)
 directory = os.path.dirname(filepath)
 os.chdir(directory)
 
-gamma = 1.4
+from atmosphere import *
 
 # General iteration function
 def iterate(function_name, LHS, guess=None):
@@ -45,7 +45,7 @@ def bisection(function_name, guess_max, guess_min):
 
 
 # A.1
-def isentropic(parameter, lookup_key="M"):
+def isentropic(parameter, gamma, lookup_key="M"):
     def get_A_Astar(M):
         Tt_T = 1 + ((gamma - 1)/2) * M**2
         A_Astar = ((gamma + 1) / 2)**((-gamma - 1) / (2 * (gamma - 1))) * (Tt_T**((gamma + 1) / (2 * (gamma - 1)))) / M
@@ -62,6 +62,7 @@ def isentropic(parameter, lookup_key="M"):
 
     match lookup_key:
         case "M":
+            M = parameter
             Tt_T = get_Tt_T(parameter)
             Pt_P = get_Pt_P(parameter)
             rhot_rho = get_rhot_rho(parameter)
@@ -94,108 +95,113 @@ def isentropic(parameter, lookup_key="M"):
     return [M, Tt_T, Pt_P, rhot_rho, A_Astar]
 
 # A.2
-def normal_shock(parameter, lookup_key="M"):
-    def get_P2_P1(M1):
-        P2_P1 = 1 + ((2*gamma) / (gamma + 1)) * (M1**2 - 1)
+def normal_shock(parameter, gamma, lookup_key="M"):
+    def get_P2_P1(M0):
+        P2_P1 = 1 + ((2*gamma) / (gamma + 1)) * (M0**2 - 1)
         return P2_P1
-    def get_rho2_rho1(M1):
-        rho2_rho1 = ((gamma + 1)*M1**2) / (2 + (gamma - 1)*M1**2)
+    def get_rho2_rho1(M0):
+        rho2_rho1 = ((gamma + 1)*M0**2) / (2 + (gamma - 1)*M0**2)
         return rho2_rho1
-    def get_T2_T1(M1):
-        T2_T1 = (1 + ((2*gamma) / (gamma + 1)) * (M1**2 - 1)) * ((2 + (gamma - 1)*M1**2 / (gamma + 1)*M1**2))
+    def get_T2_T1(M0):
+        T2_T1 = (2*gamma*M0**2 - (gamma - 1)) * ((gamma - 1)*M0**2 + 2) / ((gamma + 1)**2 * M0**2)
         return T2_T1
-    def get_Pt2_Pt1(M1):
-        Pt2_Pt1 = ((gamma + 1) * M1**2 / ((gamma + 1)*M1**2 + 2))**(gamma / (gamma - 1)) * ((gamma + 1) / ((2*gamma*M1) - (gamma - 1)))**(1 / (gamma - 1))
+    def get_Pt2_Pt1(M0):
+        Pt2_Pt1 = ((gamma + 1) * M0**2 / ((gamma + 1)*M0**2 + 2))**(gamma / (gamma - 1)) * ((gamma + 1) / ((2*gamma*M0) - (gamma - 1)))**(1 / (gamma - 1))
         return Pt2_Pt1
-    def get_Pt2_P1(M1):
-        Pt2_P1 = (((((gamma + 1)**2)*M1**2) / (4*gamma*M1**2 - 2*(gamma - 1)))**(gamma / (gamma + 1))) * ((1 - gamma + 2*gamma*M1**2) / (gamma + 1))
+    def get_Pt2_P1(M0):
+        Pt2_P1 = (((((gamma + 1)**2)*M0**2) / (4*gamma*M0**2 - 2*(gamma - 1)))**(gamma / (gamma + 1))) * ((1 - gamma + 2*gamma*M0**2) / (gamma + 1))
         return Pt2_P1
-    def get_M2(M1):
-        M2 = (1 + ((gamma - 1)/2)*M1**2) / (gamma*M1**2 - (gamma - 1)/2)
+    def get_M2(M0):
+        M2 = numpy.sqrt(((gamma - 1) * M0**2 + 2) / (2 * gamma * M0**2 - (gamma - 1)))
         return M2
 
     match lookup_key:
         case "M":
-            M1 = parameter
-            P2_P1 = get_P2_P1(M1)
-            rho2_rho1 = get_rho2_rho1(M1)
-            T2_T1 = get_T2_T1(M1)
-            Pt2_Pt1 = get_Pt2_Pt1(M1)
-            Pt2_P1 = get_Pt2_P1(M1)
-            M2 = get_M2(M1)
+            M0 = parameter
+            P2_P1 = get_P2_P1(M0)
+            rho2_rho1 = get_rho2_rho1(M0)
+            T2_T1 = get_T2_T1(M0)
+            Pt2_Pt1 = get_Pt2_Pt1(M0)
+            Pt2_P1 = get_Pt2_P1(M0)
+            M2 = get_M2(M0)
         case "static pressure ratio":
-            M1 = iterate(get_P2_P1, parameter)
+            M0 = iterate(get_P2_P1, parameter)
             P2_P1 = parameter
-            rho2_rho1 = get_rho2_rho1(M1)
-            T2_T1 = get_T2_T1(M1)
-            Pt2_Pt1 = get_Pt2_Pt1(M1)
-            Pt2_P1 = get_Pt2_P1(M1)
-            M2 = get_M2(M1)
+            rho2_rho1 = get_rho2_rho1(M0)
+            T2_T1 = get_T2_T1(M0)
+            Pt2_Pt1 = get_Pt2_Pt1(M0)
+            Pt2_P1 = get_Pt2_P1(M0)
+            M2 = get_M2(M0)
         case "density ratio":
-            M1 = iterate(get_rho2_rho1, parameter)
-            P2_P1 = get_P2_P1(M1)
+            M0 = iterate(get_rho2_rho1, parameter)
+            P2_P1 = get_P2_P1(M0)
             rho2_rho1 = parameter
-            T2_T1 = get_T2_T1(M1)
-            Pt2_Pt1 = get_Pt2_Pt1(M1)
-            Pt2_P1 = get_Pt2_P1(M1)
-            M2 = get_M2(M1)
+            T2_T1 = get_T2_T1(M0)
+            Pt2_Pt1 = get_Pt2_Pt1(M0)
+            Pt2_P1 = get_Pt2_P1(M0)
+            M2 = get_M2(M0)
         case "tempeature ratio":
-            M1 = iterate(get_T2_T1, parameter)
-            P2_P1 = get_P2_P1(M1)
-            rho2_rho1 = get_rho2_rho1(M1)
+            M0 = iterate(get_T2_T1, parameter)
+            P2_P1 = get_P2_P1(M0)
+            rho2_rho1 = get_rho2_rho1(M0)
             T2_T1 = parameter
-            Pt2_Pt1 = get_Pt2_Pt1(M1)
-            Pt2_P1 = get_Pt2_P1(M1)
-            M2 = get_M2(M1)
+            Pt2_Pt1 = get_Pt2_Pt1(M0)
+            Pt2_P1 = get_Pt2_P1(M0)
+            M2 = get_M2(M0)
         case "total to total ratio":
-            M1 = iterate(get_Pt2_P1, parameter)
-            P2_P1 = get_P2_P1(M1)
-            rho2_rho1 = get_rho2_rho1(M1)
-            T2_T1 = get_T2_T1(M1)
+            M0 = iterate(get_Pt2_P1, parameter)
+            P2_P1 = get_P2_P1(M0)
+            rho2_rho1 = get_rho2_rho1(M0)
+            T2_T1 = get_T2_T1(M0)
             Pt2_Pt1 = parameter
-            Pt2_P1 = get_Pt2_P1(M1)
-            M2 = get_M2(M1)
+            Pt2_P1 = get_Pt2_P1(M0)
+            M2 = get_M2(M0)
         case "total to static ratio":
-            M1 = iterate(get_rho2_rho1, parameter)
-            P2_P1 = get_P2_P1(M1)
-            rho2_rho1 = get_rho2_rho1(M1)
-            T2_T1 = get_T2_T1(M1)
-            Pt2_Pt1 = get_Pt2_Pt1(M1)
+            M0 = iterate(get_rho2_rho1, parameter)
+            P2_P1 = get_P2_P1(M0)
+            rho2_rho1 = get_rho2_rho1(M0)
+            T2_T1 = get_T2_T1(M0)
+            Pt2_Pt1 = get_Pt2_Pt1(M0)
             Pt2_P1 = parameter
-            M2 = get_M2(M1)
+            M2 = get_M2(M0)
         case "total to static ratio":
-            M1 = iterate(get_M2, parameter)
-            P2_P1 = get_P2_P1(M1)
-            rho2_rho1 = get_rho2_rho1(M1)
-            T2_T1 = get_T2_T1(M1)
-            Pt2_Pt1 = get_Pt2_Pt1(M1)
+            M0 = iterate(get_M2, parameter)
+            P2_P1 = get_P2_P1(M0)
+            rho2_rho1 = get_rho2_rho1(M0)
+            T2_T1 = get_T2_T1(M0)
+            Pt2_Pt1 = get_Pt2_Pt1(M0)
             Pt2_P1 = get_Pt2_Pt1
             M2 = parameter
 
-    return [M1, P2_P1, rho2_rho1, T2_T1, Pt2_Pt1, Pt2_P1, M2]
+    return [M0, P2_P1, rho2_rho1, T2_T1, Pt2_Pt1, Pt2_P1, M2]
 
 # Oblique shocks
-def oblique_shock(M1, theta):
-    '''
-    gives post wave properties given the deflection angle (theta) and incoming Mach number
-    '''
+def oblique_shock(M1, parameter, gamma, lookup_key="deflection angle"):
+    ''' gives post wave properties given the deflection angle (theta) and incoming Mach number '''
+
     def theta_beta_mach(beta):
-        RHS = 2 * (1 / math.tan(beta)) * ((M1**2 * math.sin(beta)**2 - 1) / ((M1**2 * (gamma + math.cos(2*beta)) + 2)))
+        RHS = 2 * (1 / numpy.tan(beta)) * ((M1**2 * numpy.sin(beta)**2 - 1) / ((M1**2 * (gamma + numpy.cos(2*beta)) + 2)))
         return RHS
 
-    theta = math.radians(theta)
+    match lookup_key:
+        case "deflection angle":
+            # Angle assumed to be in radians
+            theta = parameter
+            LHS = numpy.tan(theta) # find beta using iteration function
+            beta = numpy.atan(iterate(theta_beta_mach, LHS))
+        case "wave angle":
+            beta = parameter
+            RHS = theta_beta_mach(beta)
+            theta = numpy.atan(RHS)
 
-    # find beta using iteration function
-    LHS = math.tan(theta)
-    beta = math.atan(iterate(theta_beta_mach, LHS))
-
-    Mn1 = M1 * math.sin(beta)
-    [Mn1, P2_P1, rho2_rho1, T2_T1, Pt2_Pt1, Pt2_P1, Mn2] = normal_shock(Mn1)
-    M2 = Mn2 / math.sin(beta - theta)
-    return [M2, P2_P1]
+    Mn1 = M1 * numpy.sin(beta)
+    Mt2 = M1 * numpy.cos(beta)
+    [Mn1, P2_P1, rho2_rho1, T2_T1, Pt2_Pt1, Pt2_P1, Mn2] = normal_shock(Mn1, gamma)
+    M2 = Mn2 / numpy.sin(beta - theta)
+    return [M2, theta, beta, Pt2_P1, P2_P1, T2_T1]
 
 # A.3
-def rayleigh(parameter, lookup_key="M"):
+def rayleigh(parameter, gamma, lookup_key="M"):
     def get_P_Pstar(M):
         P_Pstar = (1 + gamma) / (1 + gamma*M**2)
         return P_Pstar
@@ -259,9 +265,9 @@ def rayleigh(parameter, lookup_key="M"):
     return [M, P_Pstar, Pt_Ptstar, T_Tstar, Tt_Ttstar, rho_rhostar]
 
 # A.4
-def fanno(parameter, lookup_key="M"):
+def fanno(parameter, gamma, lookup_key="M"):
     def get_P_Pstar(M):
-        P_Pstar = math.sqrt((1 + gamma) / (2 + (gamma - 1)*M**2)) / M
+        P_Pstar = numpy.sqrt((1 + gamma) / (2 + (gamma - 1)*M**2)) / M
         return P_Pstar
     def get_Pt_Ptstar(M):
         Pt_Ptstar = (((2 + (gamma - 1)*M**2) / (1 + gamma))**((gamma + 1) / (2 * (gamma - 1)))) / M
@@ -270,10 +276,10 @@ def fanno(parameter, lookup_key="M"):
         T_Tstar = (1 + gamma) / (2 + (gamma - 1)*M**2)
         return T_Tstar
     def get_rho_rhostar(M):
-        rho_rhostar = math.sqrt((2 + (gamma - 1)*M**2) / (1 + gamma)) / M
+        rho_rhostar = numpy.sqrt((2 + (gamma - 1)*M**2) / (1 + gamma)) / M
         return rho_rhostar
     def get_length_term(M):
-        length_term = (1 - M**2) / (gamma * M**2) + ((gamma + 1) / (2 * gamma)) * math.log(((gamma + 1) * M**2) / (2 + (gamma - 1)* M**2))
+        length_term = (1 - M**2) / (gamma * M**2) + ((gamma + 1) / (2 * gamma)) * numpy.log(((gamma + 1) * M**2) / (2 + (gamma - 1)* M**2))
         return length_term
 
     match lookup_key:
@@ -323,13 +329,13 @@ def fanno(parameter, lookup_key="M"):
     return [M, P_Pstar, Pt_Ptstar, T_Tstar, rho_rhostar, length_term]
 
 # A.5
-def expansion_fan(M1, theta):
-    print(M1, theta)
+def expansion_fan(M1, theta, gamma):
     def prandtl_meyer(M):
-        nu = math.sqrt((gamma + 1)/(gamma - 1)) * math.atan(((gamma - 1)/(gamma + 1)) * (M**2 - 1)) - math.atan(math.sqrt(M**2 - 1))
+        nu = numpy.sqrt((gamma + 1)/(gamma - 1)) * numpy.atan(((gamma - 1)/(gamma + 1)) * (M**2 - 1)) - numpy.atan(numpy.sqrt(M**2 - 1))
         return nu
-    gamma = 1.4
-    theta = math.radians(theta)
+
+
+    theta = numpy.radians(theta)
     nu1 = prandtl_meyer(M1)
     nu2 = nu1 + theta
 
@@ -337,14 +343,13 @@ def expansion_fan(M1, theta):
     M2 = iterate(prandtl_meyer, nu2, guess=1)
     return M2, nu2
 
-def shock_tube(T1, T4, P1, P4):
+def shock_tube(T1, T4, P1, P4, gamma):
     def get_P4_P1(P2_P1):
-        P4_P1 = P2_P1 * (1 - (((gamma - 1)*(a1/a4)*(P2_P1 - 1)) / math.sqrt(2*gamma*(2*gamma + (gamma + 1)*(P2_P1 - 1)))))**(-2*gamma / (gamma - 1))
+        P4_P1 = P2_P1 * (1 - (((gamma - 1)*(a1/a4)*(P2_P1 - 1)) / numpy.sqrt(2*gamma*(2*gamma + (gamma + 1)*(P2_P1 - 1)))))**(-2*gamma / (gamma - 1))
         return P4_P1
-    gamma = 1.4 # assuming gamma 1 == gamma 2
     R = 287
-    a1 = math.sqrt(gamma * R * T1)
-    a4 = math.sqrt(gamma * R * T4)
+    a1 = numpy.sqrt(gamma * R * T1)
+    a4 = numpy.sqrt(gamma * R * T4)
     P4_P1 = P4 / P1
     P2_P1 = iterate(get_P4_P1, P4_P1)
     return P2_P1
@@ -359,3 +364,54 @@ def two_dimension_airofil(M_freestream, thetas):
 
     Machs, nus = numpy.vectorize(expansion_fan)(M_freestream, deflection_angles)
     '''
+
+def TM_cone_angles(theta_s, M0, gamma):
+    # Runge-Kutta solution to Taylor-Maccoll equation for flowfield between shock and cone surface
+    def get_Vr_double_prime(theta, Vr, Vtheta):
+        return (Vr * (Vtheta**2) - ((gamma - 1) / 2) * (1 - Vr**2 - Vtheta**2) * (2*Vr + Vtheta * (1 / numpy.tan(theta)))) / (((gamma - 1) / 2) * (1 - Vr**2 - Vtheta**2) - Vtheta**2)
+    
+    def get_velocities(theta, Vr, Vtheta):
+        # Runge-Kutta Coefficients
+        K1 = Vtheta
+        M1 = get_Vr_double_prime(theta, Vr, Vtheta)
+        K2 = Vtheta + (1/2) * M1 * h
+        M2 = get_Vr_double_prime(theta + (h/2), Vr + K1 * (h/2), Vtheta + M1 * (h/2))
+        K3 = Vtheta + M2 * (h/2)
+        M3 = get_Vr_double_prime(theta + (h/2), Vr + K2 * (h/2), Vtheta + M2 * (h/2))
+        K4 = Vtheta + M3 * h
+        M4 = get_Vr_double_prime(theta + h, Vr + K3 * h, Vtheta + M3 * h)
+
+        # Update variables
+        Vtheta += h * (M1 + (2*M2) + (2*M3) + M4) / 6
+        Vr += h * (K1 + (2*K2) + (2*K3) + K4) / 6
+
+        return Vr, Vtheta
+
+
+    if theta_s == 0: return 0 # Check if the shock wave is zero
+    [M1, deflection, _, _, _, T1_T0] = oblique_shock(M0, theta_s, gamma, lookup_key="wave angle")
+
+    # Initial conditions
+    V1 = numpy.sqrt(M1**2 / (2/(gamma - 1) + M1**2)) # Non-dimensionalize all velocities
+    Vr = V1 * numpy.cos(theta_s - deflection)
+    Vtheta = -V1 * numpy.sin(theta_s - deflection)
+    theta = theta_s
+
+    # Runge-Kutta Numerical Method
+    h = -10**-5 # step size in theta (radians)
+    Vr, Vtheta = get_velocities(theta, Vr, Vtheta) # update velocities
+
+    # Iterate until tangential velocity is zero
+    while Vtheta < 0:
+        Vr_updated, Vtheta_updated = get_velocities(theta, Vr, Vtheta)
+
+        # Linear interpolation for precise zeroing of Vtheta
+        if Vtheta_updated >= 0:
+            fraction = -Vtheta / (Vtheta_updated - Vtheta)
+            return numpy.degrees(theta + fraction * h)
+
+        theta += h
+        Vr, Vtheta = Vr_updated, Vtheta_updated
+
+def equilibrium_air(T):
+    pass

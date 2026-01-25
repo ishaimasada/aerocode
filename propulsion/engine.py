@@ -67,13 +67,13 @@ class Station:
         self.rho = self.P / (self.R * self.T)
         self.A = self.W / (self.rho * self.V)
 
-    def get_ht(self, T, FAR):
+    def get_ht(self, TZ, FAR):
         """ Formula 3.27 """
         ht = (
               self.A["A0"] * TZ + self.A["A1"] * TZ**2 / 2 + (self.A["A2"] * TZ**3) / 3 + 
               (self.A["A3"] * TZ**4) / 4 + (self.A["A4"] * TZ**5) / 5 + (self.A["A5"] * TZ**6) / 6 +
               (self.A["A6"] * TZ**7) / 7 + (self.A["A7"] * TZ**8) / 8 + (self.A["A8"] * TZ**9) / 9 +
-              self.A["A9"] + (self.B["B0"] * TZ + self.B["B1"] * TZ**2 / 2 + (self.B["B2"] * TZ**3) / 3 +
+               self.A["A9"] + (self.B["B0"] * TZ + self.B["B1"] * TZ**2 / 2 + (self.B["B2"] * TZ**3) / 3 +
               (self.B["B3"] * TZ**4) / 4 + (self.B["B4"] * TZ**5) / 5 + (self.B["B5"] * TZ**6) / 6 +
               (self.B["B6"] * TZ**7) / 7 + (self.B["B7"] * TZ**8) / 8 + self.B["B8"]) * (FAR / (1 + FAR))
              ) - self.REFH0
@@ -82,7 +82,7 @@ class Station:
     
 
 class Inlet:
-    def __init__(self, upstream:Ambient, Pt_recovery):
+    def __init__(self, upstream:Station, Pt_recovery):
         self.upstream = upstream
         self.exit_W = self.upstream.W
         self.exit_Pt = self.upstream.Pt * Pt_recovery
@@ -230,7 +230,8 @@ class Engine:
         self.e_mechanical = 0.99
 
         # Architecture
-        self.inlet = Inlet(upstream = self.ambient)
+        ambient = Station()
+        self.inlet = Inlet(upstream = ambient)
         self.compressor = Compressor(upstream = self.inlet.downstream)
         self.burner = Burner(upstream = self.compressor.downstream)
         self.turbine =  Turbine(upstream = self.burner.downstream)

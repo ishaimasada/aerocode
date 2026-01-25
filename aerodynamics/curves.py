@@ -146,7 +146,7 @@ class BSpline():
             point = Point(0,0,0)
             for i in range(len(self.control_points)):
                 basis_coefficient = basis_function(parameter, self.degree, i)
-                point += self.control_points[i].scalar_mul(basis_coefficient)
+                point += self.control_points[i] * basis_coefficient
             self.positions.append(point)
 
         return self.positions

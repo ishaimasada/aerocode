@@ -12,13 +12,11 @@ os.chdir(directory)
 sys.path.append(r'..\curves')
 
 # Import the Position Vector class
-from Point import Point
-from BSpline import BSpline
-from BezierCurve import BezierCurve
+from curves import *
 
 # Example Usage
 # Sample inputs
-control_points = [Point(0,0,0), Point(2,2,0), Point(5,4,0), Point(7,4,0)]
+control_points = [Point(0,0,0), Point(5,0.25,0), Point(7,0,0), Point(5, -0.25,0)]
 degree = 3
 
 num_points = 100
