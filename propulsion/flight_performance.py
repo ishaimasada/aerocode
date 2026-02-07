@@ -1,9 +1,6 @@
+""" Flight Performance module for off design analysis """
 import matplotlib.pyplot as plt
-import pandas
-import numpy
-import math
-import copy
-import os
+import pandas, numpy, math, copy, sys, os
 
 # Change the current working directory to the file location
 filepath = os.path.abspath(__file__)
@@ -12,11 +9,12 @@ os.chdir(directory)
 
 from atmosphere import atmosphere
 
+# Add to search locations
+sys.path.append(r'..\aerodynamics')
+
 def Cdo_correlation(Cdo):
-    if Cdo > 0.8:
-        return 0.02 + ((Cdo - 0.8)*0.286) + (0.02*(0.2**2))
-    else:
-        return 0.02 + (0.02*(0.2**2))
+    if Cdo > 0.8: return 0.02 + ((Cdo - 0.8)*0.286) + (0.02*(0.2**2))
+    else: return 0.02 + (0.02*(0.2**2))
 
 def excess_power():
     thrust_loading = 0.45

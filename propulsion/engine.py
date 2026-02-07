@@ -1,5 +1,5 @@
 """
-class for cycle analysis
+Module for cycle Analysis and preliminary component design 
 """
 
 import os
@@ -16,6 +16,7 @@ sys.path.append(r'..\aerodynamics')
 
 from compressible import *
 from atmosphere import Ambient
+
 
 class Station:
     """ Correlations for combustion products from Walsh and Fletcher """
@@ -35,51 +36,108 @@ class Station:
     Tref = 288.15
     Pref = 101325
 
-    def __init__(self, W, Tt, Pt, ht, name:dict=None):
+    def __init__(self, W, Tt, Pt, name:dict=None):
         self.W = W
         self.Tt = Tt
         self.Pt = Pt
-        self.ht = ht
         self.name = name
         self.Wc = self.W * numpy.sqrt(self.Tt / self.Tref) / (self.Pt / self.Tref)
 
         # Statics
-        self.M, self.T, self.P, self.V, self.rho, self.A = 0
+        self.M = self.T = self.P = self.V = self.rho = self.area = 0
 
         # Gas Model
         self.FAR = 0
-        TZ = self.Tt/1000
-        self.cp = (
-                    self.A["A0"] + self.A["A1"] * TZ + (self.A["A2"] * TZ**2) + (self.A["A3"] * TZ**3) +
-                    (self.A["A4"] * TZ**4) + (self.A["A5"] * TZ**5) + (self.A["A6"] * TZ**6) +
-                    (self.A["A7"] * TZ**7) + (self.A["A8"] * TZ**8) + (self.B["B0"] + self.B["B1"] * TZ +
-                    (self.B["B2"] * TZ**2) + (self.B["B3"] * TZ**3) + (self.B["B4"] * TZ**4) +
-                    (self.B["B5"] * TZ**5) + (self.B["B6"] * TZ**6) + (self.B["B7"] * TZ**7)) * (self.FAR / (1 + self.FAR))
-                  ) # Formula 3.24
-        self.R = 287.05 - 0.0099 * self.FAR + 0.0000001 * self.FAR**2 # Formula 3.22 for Kerosene
-        self.gamma = self.cp / (self.cp - self.R)
+
+    def __str__(self):
+        return f"Station {self.name}\nW = {self.W}\nCorrected W = {self.Wc}\nTt = {self.Tt}\nPt = {self.Pt}"
+
+    @property
+    def R(self): return self.get_R(self.FAR)
+
+    @property
+    def cp(self): return self.get_cp(self.Tt, self.FAR)
+
+    @property
+    def gamma(self): return self.get_gamma()
+
+    @property
+    def ht(self): return self.get_ht(self.Tt, self.FAR)
+
+    @R.setter
+    def R(self, value): self._R = value
+
+    @gamma.setter
+    def gamma(self, value): self._gamma = value
+
+    @ht.setter
+    def ht(self, value): self._ht = value
+
+    @cp.setter
+    def cp(self, value): self._cp = value
+
+    def get_R(self, FAR): return 287.05 - 0.0099 * FAR + 0.0000001 * FAR**2 # Formula 3.22 for Kerosene
+
+    def get_gamma(self): return self.cp / (self.cp - self.R)
+
+    def get_cp(self, T, FAR):
+        TZ = T/1000
+        cp = (
+                self.A["A0"] + self.A["A1"] * TZ + (self.A["A2"] * TZ**2) + (self.A["A3"] * TZ**3) +
+                (self.A["A4"] * TZ**4) + (self.A["A5"] * TZ**5) + (self.A["A6"] * TZ**6) +
+                (self.A["A7"] * TZ**7) + (self.A["A8"] * TZ**8) + (self.B["B0"] + self.B["B1"] * TZ +
+                (self.B["B2"] * TZ**2) + (self.B["B3"] * TZ**3) + (self.B["B4"] * TZ**4) +
+                (self.B["B5"] * TZ**5) + (self.B["B6"] * TZ**6) + (self.B["B7"] * TZ**7)) * (FAR / (1 + FAR))
+                ) # Formula 3.24
+        return cp
+
         
     def set_statics(self, M):
-        [_, Tt_T, Pt_P, _, _] = isentropic(self.M, lookup_key="M")
+        [_, Tt_T, Pt_P, _, _] = isentropic(M, lookup_key="M")
+        self.M = M
         self.T = (1 / Tt_T) * self.Tt
         self.P = (1 / Pt_P) * self.Pt
         self.V = self.M * numpy.sqrt(self.gamma * self.R * self.T)
         self.rho = self.P / (self.R * self.T)
-        self.A = self.W / (self.rho * self.V)
+        self.area = self.W / (self.rho * self.V)
 
-    def get_ht(self, TZ, FAR):
+
+    def get_ht(self, T, FAR):
         """ Formula 3.27 """
+        TZ = T/1000
         ht = (
               self.A["A0"] * TZ + self.A["A1"] * TZ**2 / 2 + (self.A["A2"] * TZ**3) / 3 + 
               (self.A["A3"] * TZ**4) / 4 + (self.A["A4"] * TZ**5) / 5 + (self.A["A5"] * TZ**6) / 6 +
               (self.A["A6"] * TZ**7) / 7 + (self.A["A7"] * TZ**8) / 8 + (self.A["A8"] * TZ**9) / 9 +
-               self.A["A9"] + (self.B["B0"] * TZ + self.B["B1"] * TZ**2 / 2 + (self.B["B2"] * TZ**3) / 3 +
+              self.A["A9"] + (self.B["B0"] * TZ + self.B["B1"] * TZ**2 / 2 + (self.B["B2"] * TZ**3) / 3 +
               (self.B["B3"] * TZ**4) / 4 + (self.B["B4"] * TZ**5) / 5 + (self.B["B5"] * TZ**6) / 6 +
               (self.B["B6"] * TZ**7) / 7 + (self.B["B7"] * TZ**8) / 8 + self.B["B8"]) * (FAR / (1 + FAR))
-             ) - self.REFH0
-
+            ) - self.REFH0
         return ht
-    
+
+
+    def T_from_H(self, h, FAR, Thi, Tlo):
+        """ Finding temperature from enthalpy polynomial using the Bisection Method """
+        # Initial calculation of hmid to prevent uninitialized use
+        Tmid = (Thi + Tlo) / 2
+        hmid = self.get_ht(Tmid, FAR)
+        error = abs(hmid - h) / h
+        iterations = 0
+        
+        # Perform bisection
+        while error > 0.001:
+            Tmid = (Thi + Tlo) / 2
+            hmid = self.get_ht(Tmid, FAR)
+            
+            if hmid < h: Tlo = Tmid
+            elif hmid > h: Thi = Tmid
+            
+            iterations += 1
+            T = Tmid
+            error = abs(hmid - h) / h
+
+        return T
+
 
 class Inlet:
     def __init__(self, upstream:Station, Pt_recovery):
@@ -87,8 +145,7 @@ class Inlet:
         self.exit_W = self.upstream.W
         self.exit_Pt = self.upstream.Pt * Pt_recovery
         self.exit_Tt = self.upstream.Tt
-        self.exit_ht = self.upstream.get_ht(self.exit_Tt, 0)
-        self.downstream = Station(self.exit_W, self.exit_Tt, self.exit_Pt, self.exit_ht)
+        self.downstream = Station(self.exit_W, self.exit_Tt, self.exit_Pt)
 
 class Compressor:
     def __init__(self, upstream:Station, PR):
@@ -96,95 +153,81 @@ class Compressor:
         self.exit_W = self.upstream.W
         self.exit_Pt = self.upstream.Pt * PR
         self.exit_Tt = self.upstream.Tt
-        self.exit_ht = self.upstream.get_ht(self.exit_Tt, 0)
-        self.downstream = Station(self.exit_W, self.exit_Tt, self.exit_Pt, self.exit_ht)
+        self.downstream = Station(self.exit_W, self.exit_Tt, self.exit_Pt)
 
 class Burner:
     def __init__(self, upstream:Station, TET, LHV, pressure_loss):
         self.upstream = upstream
         self.eta_b = 1
-        self.exit_FAR = self.get_FAR(TET, self.inlet.Tt, LHV)
+        self.exit_FAR = self.upstream.get_FAR(TET, self.inlet.Tt, LHV)
         self.exit_W = self.upstream.W * (1 + self.exit_FAR)
         self.exit_Pt = upstream.Pt * (1 - pressure_loss)
         self.exit_Tt = TET
-        self.exit_ht = upstream.get_ht(self.exit_Tt, self.exit_FAR)
-        self.downstream = Station(self.exit_W, self.exit_Tt, self.exit_Pt, self.exit_ht)
+        self.downstream = Station(self.exit_W, self.exit_Tt, self.exit_Pt)
     
-    def get_FAR(self, T2, T1, LHV):
-        """ Iterating Fuel-to-Air ratio until the exit total temperature matches the TIT """
-        # Initialize variables
-        FARnew = 0.02
-        FAR = -1 # Start with a value that ensures the loop condition is met
-        h1 = self.outlet.get_ht(T1, 0)
-        
-        # Perform iterations
-        while (abs(FAR - FARnew) / FARnew) > 0.00001:
-            FAR = FARnew
-            h2 = self.outlet.get_ht(T2, FAR)
-            FARnew = (h2 - h1) / (LHV * self.eta_b)
-
-        return FARnew
 
 class Turbine:
-    def __init__(self, upstream:Station, FAR, TET, eta_t):
-        self.upstream = upstream
-        self.exit_W = self.upstream.W * (1 + FAR)
-        self.exit_Pt = self.upstream.Pt * (1 - eta_t)
-        self.exit_Tt = self.TfromH(self.exit_ht, FAR, TET, 0)
-        self.exit_ht = upstream.get_ht(self.exit_Tt, self.exit_FAR)
-        self.downstream = Station(self.exit_W, self.exit_Tt, self.exit_Pt, self.exit_ht)
+    def __init__(self, cycle_parameters, cycle_specification=None):
+        # CYCLE ANALYSIS
+        self.upstream = cycle_parameters["upstream"] # Station object
+        TET = cycle_parameters["TET"]
+        e_tt = cycle_parameters["polytropic efficiency"]
+        mdot_cool = cycle_parameters["coolant"]
+        power = cycle_parameters["turbine power consumption"] * 1000 # MW to kW
 
-    def TfromH(self, h, FAR, Thi, Tlo):
-        """ Finding temperature from enthalpy polynomial using the Bisection Method """
-        # Initial calculation of hmid to prevent uninitialized use
-        Tmid = (Thi + Tlo) / 2
-        hmid = self.get_ht(Tmid, FAR)
-        
-        # Perform bisection
-        while (abs(hmid - h) / h) > 0.001:
-            Tmid = (Thi + Tlo) / 2
-            hmid = self.get_ht(Tmid, FAR)
-            
-            if hmid < h:
-                Tlo = Tmid
-            elif hmid > h:
-                Thi = Tmid
-            
-            iterations = iterations + 1
-            TfromH = Tmid
-        return TfromH
+        self.exit_W = self.upstream.W + mdot_cool
+        self.exit_ht = (self.upstream.ht * self.upstream.W - power) / self.upstream.W
+        FAR = self.upstream.W * self.upstream.FAR / (self.exit_W - (self.upstream.W * self.upstream.FAR))
+        self.exit_Tt = self.upstream.T_from_H(self.exit_ht, FAR, TET, 0)
+        ER = (self.exit_Tt  / self.upstream.Tt)**(-self.upstream.gamma / ((self.upstream.gamma - 1)*e_tt))
+        self.exit_Pt = self.upstream.Pt / ER
+        self.downstream = Station(self.exit_W, self.exit_Tt, self.exit_Pt)
+
+        # COMPONENT DESIGN
+        if cycle_specification != None:
+            self.phi = cycle_specification["load coefficient"]
+            self.psi = cycle_specification["work coefficient"]
+
+    def velocity_triangle(self, R: list, rpm, Vax, Vu_mid, Rmid):
+        omega = rpm * (2*numpy.pi / 60)
+        U = omega * numpy.array(R)
+        Vu = Vu_mid * (R / Rmid) # Free vortex assumption
+        Wu = Vu - U
+        V = numpy.sqrt(Vax**2 + Vu**2)
+        W = numpy.sqrt(Vax**2 + Wu**2)
+        alpha = numpy.atan(Vu / Vax)
+        beta = numpy.atan(Wu / Vax)
+        reaction = (W[2]**2 - W[1]**2) / (V[2]**2 - V[1]**2 + W[2]**2 - W[1]**2)
+        #M_absolute = V / numpy.sqrt(self.downstream.gamma * self.downstream.R * self.downstream.T)
+        #statics = isentropic()
+
 
 class Nozzle:
     def __init__(self, upstream:Station):
         self.upstream = upstream
-        self.exit_W = self.upstream.W
-        self.exit_Pt = self.upstream.Pt
-        self.exit_Tt = self.upstream.Tt
-        self.exit_ht = self.upstream.get_ht(self.exit_Tt, self.exit_FAR)
-        self.exit = Station(self.exit_W, self.exit_Tt, self.exit_Pt, self.exit_ht)
+        self.downstream = Station(self.upstream.W, self.upstream.Pt, self.upstream.Tt, self.upstream.ht)
 
-        def statics(self,  Pinf, ):
-            gamma = self.exit.gamma
+        def statics(self,  Pinf):
+            gamma = self.downstream.gamma
+            cp = self.downstream.cp
+            R = self.downstream.R
             critical_NPR = (1 + ((gamma-1) / 2))**(gamma / (gamma-1))
-            NPR = upstream.Pt / Pinf
+            NPR = self.upstream.Pt / Pinf
             if NPR > critical_NPR:
-                self.exit.M = 1
-                self.exit.V = numpy.sqrt(self.exit.gamma * self.exit.R * self.exit.T)
-                self.exit.P = self.exit.Pt * critical_NPR
+                self.downstream.M = 1
+                self.downstream.V = numpy.sqrt(gamma * R * self.downstream.T)
+                self.downstream.P = self.downstream.Pt * critical_NPR
             else:
-                pass
-                #self.exit.M = 
+                self.downstream.P = Pinf
+                self.downstream.T = self.downstream * (self.downstream.P/self.downstream.Pt)**((gamma - 1) / gamma)
+                self.downstream.V = numpy.sqrt(2 * cp * (self.downstream.Tt - self.downstream.T))
+                self.downstream.M = self.downstream.V / numpy.sqrt(gamma * R * self.downstream.T)
 
 class Diffuser:
     def __init__(self, upstream:Station):
-        pass
-        '''
-        self.exit_W = upstream.W
-        self.exit_Pt = upstream.Pt
-        self.exit_Tt = upstream.Tt
-        self.exit_ht = upstream.get_ht(self.exit_Tt, self.exit_FAR)
-        self.exit = Station(self.exit_W, self.exit_Tt, self.exit_Pt, self.exit_ht)
-        '''
+        self.upstream = upstream
+        self.downstream = Station(self.upstream.W, self.upstream.Pt, self.upstream.Tt, self.upstream.ht)
+
         def set_statics(self,  Pa):
             pass
 
@@ -229,6 +272,8 @@ class Engine:
         self.CV = 0.99
         self.e_mechanical = 0.99
 
+        # Prepare cycle analysis and component design inputs
+
         # Architecture
         ambient = Station()
         self.inlet = Inlet(upstream = ambient)
@@ -237,9 +282,28 @@ class Engine:
         self.turbine =  Turbine(upstream = self.burner.downstream)
         self.exhaust =  Nozzle(upstream = self.turbine.downstream)
 
+
+
+    """ Performance Parameters """
+    '''
+    # Specific Thrust
+    T_ma = u_e * (1 + f44) - u_i
+    # Thrust Specific Fuel Consumption (TSFC)
+    TSFC = (f44 / T_ma) * 10**3
+    # Thrust
+    thrust = T_ma * mdota
+
+    # Propulsive Efficiency
+    eta_p = 2 / (1 + (u_e / u_i))
+    # Thermal Efficiency
+    eta_th = (((1 + f44) * u_e ** 2) - u_i**2) / (f44 * QR)
+    # Overall Efficiency
+    eta_o = eta_p * eta_th
+    '''
+
     def validate_cycle(self):
         pass
-    def optimize(self, perf_param):
+    def optimize(self, performance_parameter):
         pass
     def sensitivity_study(self):
         pass

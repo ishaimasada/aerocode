@@ -45,6 +45,7 @@ class Point:
     def magnitude(self):
         return numpy.sqrt(self.x_coord**2 + self.y_coord**2 + self.z_coord**2)
 
+
 '''
 Bezier Curve class for curve design
 '''
@@ -96,10 +97,9 @@ class BezierCurve():
         plt.scatter(x_positions, y_positions, 'o')
         plt.plot(x_positions, y_positions)
 
-'''
-Create a BSpline curve 
-Uses the Cox-de Boor recursion formula to determine the basis coefficients
 
+'''
+Create a BSpline curve using the Cox-de Boor recursion formula  based on basis coefficients
 NOTE: This program currently assumes a uniform knot vector. Different types of knot vectors must be accounted for
 '''
 class BSpline():
@@ -124,21 +124,16 @@ class BSpline():
         def basis_function(parameter, degree, i):
             # Check for curve simplicity
             if degree == 0:
-                if self.knots[i] <= parameter < self.knots[i + 1]:
-                    return 1
+                if self.knots[i] <= parameter < self.knots[i + 1]: return 1
                 return 0
 
             # First Term
-            if self.knots[i + degree] == self.knots[i]:
-                term1 = 0
-            else:
-                term1 = ((parameter - self.knots[i]) / (self.knots[i + degree] - self.knots[i])) * basis_function(parameter, degree - 1, i)
+            if self.knots[i + degree] == self.knots[i]: term1 = 0
+            else: term1 = ((parameter - self.knots[i]) / (self.knots[i + degree] - self.knots[i])) * basis_function(parameter, degree - 1, i)
             
             # Second Term
-            if self.knots[i + degree + 1] == self.knots[i + 1]:
-                term2 = 0
-            else:
-                term2 = ((self.knots[i + degree + 1] - parameter) / (self.knots[i + degree + 1] - self.knots[i + 1])) * basis_function(parameter, degree - 1, i + 1)
+            if self.knots[i + degree + 1] == self.knots[i + 1]: term2 = 0
+            else: term2 = ((self.knots[i + degree + 1] - parameter) / (self.knots[i + degree + 1] - self.knots[i + 1])) * basis_function(parameter, degree - 1, i + 1)
 
             return term1 + term2
         
