@@ -7,10 +7,10 @@ filepath = os.path.abspath(__file__)
 directory = os.path.dirname(filepath)
 os.chdir(directory)
 
-from atmosphere import atmosphere
-
 # Add to search locations
 sys.path.append(r'..\aerodynamics')
+
+from atmosphere import atmosphere
 
 def Cdo_correlation(Cdo):
     if Cdo > 0.8: return 0.02 + ((Cdo - 0.8)*0.286) + (0.02*(0.2**2))
@@ -86,7 +86,7 @@ def mission(data):
 gamma = 1.4
 R = 287
 g = 9.8
-Tref, Pref, rhoref, aref = atmosphere(0)
+[Tref, Pref, rhoref] = atmosphere(0)
 AR = 10
 e = 0.8
 K1 = 1/(math.pi*AR*e)+0.02
@@ -95,4 +95,4 @@ CDR = 0
 acceleration = 0
 wing_loading = 45 * 47.88
 
-data = pandas.read_excel("inputs.xlsx")
+#data = pandas.read_excel("inputs.xlsx")

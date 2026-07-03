@@ -17,10 +17,10 @@ with open("bypass_parameters.json", "r") as file:
 sys.path.append(r"../propulsion")
 
 # Import all types from engine module
-from engine import *
+from engine import * # type: ignore
 
 engine_parameters = parameters["engine"]
-engine = BypassEngine(engine_parameters)
+engine = BypassEngine(engine_parameters) # type: ignore
 engine.set_components(parameters)
 station_data, performance = engine.get_performance()
 

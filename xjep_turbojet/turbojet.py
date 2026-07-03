@@ -1,8 +1,4 @@
-''' 
-Turbojet engine design for XJEP 
-
-Replaces the role of the JetCats and KingTechs by allowing for easy instrumentation
-'''
+''' Turbojet engine design for XJEP --> Replaces the role of the JetCats and KingTechs by allowing for easy instrumentation '''
 
 import json
 import sys
@@ -15,19 +11,31 @@ os.chdir(directory)
 
 # Load parameters from JSON file
 with open("turbojet_parameters.json", "r") as file:
-    parameters = json.load(file)["parameters"]
+    cycle_parameters = json.load(file)["parameters"]
+    engine_parameters = cycle_parameters["engine"]
+
+with open("inlet_parameters.json", "r") as file:
+    inlet_parameters = json.load(file)
+
+with open("turbine_parameters.json", "r") as file:
+    turbine_parameters = json.load(file)
+
+with open("burner_parameters.json", "r") as file:
+    burner_parameters = json.load(file)
 
 sys.path.append(r"..\propulsion")
 
 # Import all types from engine module
-from engine import *
+from engine import * # type: ignore
+
+# CYCLE ANALYSIS
+output_filename = "station_data.xlsx"
 
 # Create an instance of the Engine class
-engine_parameters = parameters["engine"]
-engine = Engine(engine_parameters)
+engine = Engine(engine_parameters) # type: ignore
 
 # Pass the component parameters to the engine object for cycle analysis
-engine.set_components(parameters)
+engine.set_components(cycle_parameters)
 
 # Retrieve the flow properties and full engine performance
 station_data, performance = engine.get_performance()
@@ -35,8 +43,11 @@ station_data, performance = engine.get_performance()
 # Change the current working directory to the file location
 os.chdir(directory)
 
-# Output the station data to an excel
-station_data.to_excel("station_data.xlsx", index=False)
+# Output the station data to an Excel for analysis
+station_data.to_excel(output_filename, index=False)
 
-# Display performance & plot the temperatures and pressures
-print(performance)
+# COMPONENT DESIGN
+engine.inlet.design_component(inlet_parameters)
+#engine.compressor.design_component(compressor_parameters)
+engine.burner.design_component(burner_parameters)
+engine.turbine.design_component(turbine_parameters)

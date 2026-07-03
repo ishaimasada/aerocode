@@ -1,0 +1,21 @@
+{
+    "machine": "annular",
+    "inlet Tt": 647,
+    "inlet Pt": 647930,
+    "exit Tt": 1650,
+    "exit Pt": 622970,
+    "W": 20.9,
+    "Wf": 0.577,
+    "LHV": 43100000,
+    "R": 287,
+    "gamma": 1.4,
+    "Pt loss": 0.05,
+    "omega cold": 16,
+    "K OTDF": 0.05,
+    "K hot": 1.3,
+    "liner area fraction": 0.5,
+    "r tip": 0.34,
+    "combustor length": 0.45,
+    "phi PRZ": 1.02,
+    "phi SEC": 0.6
+}

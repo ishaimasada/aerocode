@@ -1,6 +1,5 @@
-'''
-Example usage code for component classes
-'''
+''' Example usage code for turbine class '''
+
 import json
 import os
 import sys
@@ -17,7 +16,7 @@ with open("turbine_parameters.json", "r") as file:
 sys.path.append(r"../propulsion")
 
 # Import all types from engine module
-from engine import Turbine
+from engine import Turbine # type: ignore
 
 turbine = Turbine(upstream=None, compressor=None, component_parameters=parameters)
 
