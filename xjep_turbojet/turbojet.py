@@ -40,14 +40,8 @@ engine = Engine(engine_parameters) # type: ignore
 # Pass the component parameters to the engine object for cycle analysis
 engine.set_components(cycle_parameters)
 
-# Retrieve the flow properties and full engine performance
-station_data, performance = engine.get_performance()
-
 # Change the current working directory to the file location
 os.chdir(directory)
-
-# Output the station data to an Excel for analysis
-station_data.to_excel(output_filename, index=False)
 
 # COMPONENT DESIGN
 engine.inlet.design_component(inlet_parameters)
@@ -55,4 +49,3 @@ engine.inlet.design_component(inlet_parameters)
 engine.burner.design_component(burner_parameters)
 engine.turbine.design_component(turbine_parameters)
 engine.exhaust.design_component(nozzle_parameters)
-print(engine.exhaust.CA)
