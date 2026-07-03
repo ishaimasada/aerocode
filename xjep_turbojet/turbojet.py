@@ -9,7 +9,7 @@ filepath = os.path.abspath(__file__)
 directory = os.path.dirname(filepath)
 os.chdir(directory)
 
-# Load parameters from JSON file
+# Load engine and component parameters from JSON files
 with open("turbojet_parameters.json", "r") as file:
     cycle_parameters = json.load(file)["parameters"]
     engine_parameters = cycle_parameters["engine"]
@@ -17,11 +17,14 @@ with open("turbojet_parameters.json", "r") as file:
 with open("inlet_parameters.json", "r") as file:
     inlet_parameters = json.load(file)
 
+with open("burner_parameters.json", "r") as file:
+    burner_parameters = json.load(file)
+
 with open("turbine_parameters.json", "r") as file:
     turbine_parameters = json.load(file)
 
-with open("burner_parameters.json", "r") as file:
-    burner_parameters = json.load(file)
+with open("nozzle_parameters.json", "r") as file:
+    nozzle_parameters = json.load(file)
 
 sys.path.append(r"..\propulsion")
 
@@ -51,3 +54,4 @@ engine.inlet.design_component(inlet_parameters)
 #engine.compressor.design_component(compressor_parameters)
 engine.burner.design_component(burner_parameters)
 engine.turbine.design_component(turbine_parameters)
+engine.nozzle.design_component(nozzle_parameters)

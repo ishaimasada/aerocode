@@ -1,0 +1,13 @@
+{
+    "inlet station": {
+        "W": 0.546,
+        "Pt": 247.957,
+        "Tt": 1380.566,
+        "FAR": 0.031,
+        "M": 0.43
+    },
+    "type": "conical",
+    "geometry": "C",
+    "half angle": 15,
+    "Pinf": 101.325
+}

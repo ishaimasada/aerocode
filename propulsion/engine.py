@@ -1438,34 +1438,39 @@ class Afterburner:
 
 
 class Nozzle:
-    def __init__(self, upstream:Station, cycle_parameters, component_parameters=None):
-        # CYCLE ANALYSIS
-        self.geometry = cycle_parameters["C/CD"]
-        self.engine = cycle_parameters["engine"]
-        self.Pinf = self.engine.ambient.P
-        self.solve_exit(upstream)
-        
-        # COMPONENT DESIGN
-        if component_parameters != None:
-            self.design_component(component_parameters)
+    def __init__(self, upstream:Station, cycle_parameters=None, component_parameters=None):
+        if cycle_parameters != None:
+            # CYCLE ANALYSIS
+            self.cycle_parameters = cycle_parameters
+            self.geometry = self.cycle_parameters["C/CD"]
+            self.engine = self.cycle_parameters["engine"]
+            self.Pinf = self.engine.ambient.P
+            self.CD = self.cycle_parameters["discharge coefficient"]
+            self.CV = self.cycle_parameters["velocity coefficient"]
+            self.solve_exit(upstream)
+            
+            # COMPONENT DESIGN
+            if component_parameters != None:
+                self.design_component(component_parameters)
 
+    # Cycle method
     def solve_exit(self, upstream):
-        self.inlet = upstream
-
         # Handle Converging or Converging-Diverging nozzle geometries
         match self.geometry:
-            case "C": self.converging(self.Pinf)
-            case "CD": self.CD(self.Pinf)
+            case "C": self.solve_converging(upstream)
+            case "CD": self.solve_CD(upstream)
 
-    def converging(self,  Pinf):
+    # Cycle method
+    def solve_converging(self, upstream):
+        self.inlet = upstream
         gamma = self.inlet.gamma
         cp = self.inlet.cp
         R = self.inlet.R
         critical_NPR = (1 + ((gamma-1) / 2))**(gamma / (gamma-1))
-        NPR = self.inlet.Pt / Pinf
+        self.NPR = self.inlet.Pt / self.Pinf
         self.exit = copy.deepcopy(self.inlet)
         self.exit.idx = 8 # Throat station
-        if NPR >= critical_NPR:
+        if self.NPR >= critical_NPR:
             # Choked
             self.exit.M = 1
             self.exit.T = (2 / (gamma + 1)) * self.exit.Tt
@@ -1473,19 +1478,22 @@ class Nozzle:
             self.exit.P = self.exit.Pt * (1 / critical_NPR)
         else:
             # Unchoked
-            self.exit.P = Pinf
+            self.exit.P = self.Pinf
             self.exit.T = self.exit.Tt * (self.exit.P/self.exit.Pt)**((gamma - 1) / gamma)
             self.exit.V = numpy.sqrt(2 * cp * (self.exit.Tt - self.exit.T))
             self.exit.M = self.exit.V / numpy.sqrt(gamma * R * self.exit.T)
         self.exit.set_statics(self.exit.M)
-    
 
-    def CD(self, Pinf):
+    # Cycle method
+    def solve_CD(self, upstream):
         # This function forces the throat to always be choked (CHECK THIS)
+        self.inlet = upstream
         gamma = self.inlet.gamma
         cp = self.inlet.cp
         R = self.inlet.R
-        self.exit = self.throat = copy.deepcopy(self.inlet)
+        self.NPR = self.inlet.Pt / self.Pinf
+        self.exit = copy.deepcopy(self.inlet)
+        self.throat = copy.deepcopy(self.inlet)
         self.throat.idx = 8
         self.exit.idx = 9
         # Throat Calculations
@@ -1497,12 +1505,62 @@ class Nozzle:
             self.throat.mdot = self.inlet.mdot
             self.throat.set_statics(self.throat.M)
         # Exit Plane Calculations
-        self.exit.P = Pinf; # Assuming perfectly expanded flow
+        self.exit.P = self.Pinf; # Assuming perfectly expanded flow
         self.exit.M = numpy.sqrt((2/(gamma - 1)) * ((self.exit.Pt/self.exit.P)^((gamma-1)/gamma) - 1)); # Isentropic Relation
         self.exit.set_statics(self.exit.M)
 
+    # Cycle method for performing preliminary component design ("specification" portion of the component design parameters)
+    # Only call this after performing cycle analysis, NOT component design
+    def get_specification(self):
+        specification = {
+            "W": self.inlet.W,
+            "Pt": self.inlet.Pt,
+            "Tt": self.inlet.Tt,
+            "FAR": self.inlet.FAR,
+            "M": self.inlet.M
+        }
+        return specification
+
     def design_component(self, component_parameters):
         self.component_parameters = component_parameters
+        self.type = self.component_parameters["type"]
+        W_in = self.component_parameters["inlet station"]["W"]
+        Pt_in = self.component_parameters["inlet station"]["Pt"]
+        Tt_in = self.component_parameters["inlet station"]["Tt"]
+        FAR_in = self.component_parameters["inlet station"]["FAR"]
+        M_in = self.component_parameters["inlet station"]["M"]
+        self.inlet = Station(W_in, Tt_in, Pt_in, FAR=FAR_in, M=M_in)
+        if not hasattr(self, "geometry"):
+            self.geometry = self.component_parameters["geometry"]
+        if not hasattr(self, "Pinf"):
+            self.Pinf = self.component_parameters["Pinf"]
+        match self.geometry:
+            case "C": 
+                self.solve_converging(self.inlet)
+                self.alpha = numpy.deg2rad(self.component_parameters["half angle"])
+                self.r_inlet = numpy.sqrt(self.inlet.area / numpy.pi)
+                self.r_exit = numpy.sqrt(self.exit.area / numpy.pi)
+                self.length = (self.r_exit - self.r_inlet) / numpy.tan(self.alpha)
+                match self.type:
+                    case "conical":
+                        self.CA = (1 + numpy.cos(self.alpha)) / 2
+                    case "rectangular":
+                        self.CA = numpy.sin(self.alpha) / self.alpha
+            case "CD": 
+                self.solve_CD(self.inlet)
+                self.C_alpha = numpy.deg2rad(self.component_parameters["converging half angle"])
+                self.CD_alpha = numpy.deg2rad(self.component_parameters["diverging half angle"])
+                self.r_inlet = numpy.sqrt(self.inlet.area / numpy.pi)
+                self.r_th = numpy.sqrt(self.throat.area / numpy.pi)
+                self.r_exit = numpy.sqrt(self.exit.area / numpy.pi)
+                self.converging_length = (self.r_th - self.r_inlet) / numpy.tan(self.C_alpha)
+                self.diverging_length = (self.r_exit - self.r_th) / numpy.tan(self.CD_alpha)
+                self.total_length = self.converging_length + self.diverging_length
+                match self.type:
+                    case "conical":
+                        self.CA = (1 + numpy.cos(self.CD_alpha)) / 2
+                    case "rectangular":
+                        self.CA = numpy.sin(self.CD_alpha) / self.CD_alpha
 
 
 class Recuperator:
@@ -1810,6 +1868,8 @@ class Engine:
                 specifications["compressor"] = component.get_specification()
             elif isinstance(component, Turbine):
                 specifications["turbine"] = component.get_specification()
+            elif isinstance(component, Nozzle):
+                specifications["nozzle"] = component.get_specification()
         return specifications
 
     def optimize(self, performance_parameter): pass
