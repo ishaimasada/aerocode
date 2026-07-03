@@ -1514,7 +1514,7 @@ class Nozzle:
     def get_specification(self):
         specification = {
             "W": self.inlet.W,
-            "Pt": self.inlet.Pt,
+            "Pt": self.inlet.Pt / 1000,
             "Tt": self.inlet.Tt,
             "FAR": self.inlet.FAR,
             "M": self.inlet.M
@@ -1525,7 +1525,7 @@ class Nozzle:
         self.component_parameters = component_parameters
         self.type = self.component_parameters["type"]
         W_in = self.component_parameters["inlet station"]["W"]
-        Pt_in = self.component_parameters["inlet station"]["Pt"]
+        Pt_in = self.component_parameters["inlet station"]["Pt"] * 1000
         Tt_in = self.component_parameters["inlet station"]["Tt"]
         FAR_in = self.component_parameters["inlet station"]["FAR"]
         M_in = self.component_parameters["inlet station"]["M"]
@@ -1533,14 +1533,14 @@ class Nozzle:
         if not hasattr(self, "geometry"):
             self.geometry = self.component_parameters["geometry"]
         if not hasattr(self, "Pinf"):
-            self.Pinf = self.component_parameters["Pinf"]
+            self.Pinf = self.component_parameters["Pinf"] * 1000
         match self.geometry:
             case "C": 
                 self.solve_converging(self.inlet)
                 self.alpha = numpy.deg2rad(self.component_parameters["half angle"])
                 self.r_inlet = numpy.sqrt(self.inlet.area / numpy.pi)
                 self.r_exit = numpy.sqrt(self.exit.area / numpy.pi)
-                self.length = (self.r_exit - self.r_inlet) / numpy.tan(self.alpha)
+                self.length = (self.r_inlet - self.r_exit) / numpy.tan(self.alpha)
                 match self.type:
                     case "conical":
                         self.CA = (1 + numpy.cos(self.alpha)) / 2
@@ -1553,7 +1553,7 @@ class Nozzle:
                 self.r_inlet = numpy.sqrt(self.inlet.area / numpy.pi)
                 self.r_th = numpy.sqrt(self.throat.area / numpy.pi)
                 self.r_exit = numpy.sqrt(self.exit.area / numpy.pi)
-                self.converging_length = (self.r_th - self.r_inlet) / numpy.tan(self.C_alpha)
+                self.converging_length = (self.r_inlet - self.r_th) / numpy.tan(self.C_alpha)
                 self.diverging_length = (self.r_exit - self.r_th) / numpy.tan(self.CD_alpha)
                 self.total_length = self.converging_length + self.diverging_length
                 match self.type:
