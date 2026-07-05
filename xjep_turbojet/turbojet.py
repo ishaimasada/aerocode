@@ -17,6 +17,9 @@ with open("turbojet_parameters.json", "r") as file:
 with open("inlet_parameters.json", "r") as file:
     inlet_parameters = json.load(file)
 
+with open("compressor_parameters.json", "r") as file:
+    compressor_parameters = json.load(file)
+
 with open("burner_parameters.json", "r") as file:
     burner_parameters = json.load(file)
 
@@ -45,7 +48,7 @@ os.chdir(directory)
 
 # COMPONENT DESIGN
 engine.inlet.design_component(inlet_parameters)
-#engine.compressor.design_component(compressor_parameters)
+engine.compressor.design_component(compressor_parameters)
 engine.burner.design_component(burner_parameters)
 engine.turbine.design_component(turbine_parameters)
 engine.exhaust.design_component(nozzle_parameters)

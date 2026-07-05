@@ -1,0 +1,101 @@
+{
+    "flow": "axial",
+    "number of radii": 3,
+    "toggle solution": true,
+    "average dTt": 35,
+    "rpm": 50000,
+    "U1t": 400,
+    "specification": {
+            "PR": 4,
+            "power": 87557.1811,
+            "polytropic efficiency": 0.91,
+            "W": 0.53, 
+            "Wc": 0.54045,
+            "Tt": 288.19,
+            "Pt": 99372.9123,
+            "R": 287.05,
+            "gamma": 1.401,
+            "Cp": 1003.33,
+            "FAR": 0,
+            "M": 0.15,
+            "alpha": 0
+    },
+    "stages": [
+        {
+            "dTt": 35,
+            "aerodynamics": {
+                "loss coefficient": 0.05, 
+                "Vax climb rotor": 1,
+                "Vax climb stator": 1,
+                "exit M": 0.3, 
+                "exit alpha": 0
+            },
+            "geometry": {
+                "rm climb rate rotor": 1.05,
+                "rm climb rate stator": 1.05,
+                "rotor solidity": 1,
+                "stator solidity": 1,
+                "rotor NOB": 23,
+                "stator NOB": 26
+            }
+        },
+        {
+            "dTt": 35,
+            "aerodynamics": {
+                "loss coefficient": 0.05, 
+                "Vax climb rotor": 1,
+                "Vax climb stator": 1,
+                "exit M": 0.3, 
+                "exit alpha": 0
+            },
+            "geometry": {
+                "rm climb rate rotor": 1.05,
+                "rm climb rate stator": 1.05,
+                "rotor solidity": 1,
+                "stator solidity": 1,
+                "rotor NOB": 23,
+                "stator NOB": 26
+            }
+        },
+        {
+            "dTt": 35,
+            "aerodynamics": {
+                "loss coefficient": 0.05, 
+                "Vax climb rotor": 1,
+                "Vax climb stator": 1,
+                "exit M": 0.3, 
+                "exit alpha": 0
+            },
+            "geometry": {
+                "rm climb rate rotor": 1.05,
+                "rm climb rate stator": 1.05,
+                "rotor solidity": 1,
+                "stator solidity": 1,
+                "rotor NOB": 23,
+                "stator NOB": 26
+            }
+        },
+        {
+            "dTt": 35,
+            "aerodynamics": {
+                "loss coefficient": 0.05, 
+                "Vax climb rotor": 1,
+                "Vax climb stator": 1,
+                "exit M": 0.3, 
+                "exit alpha": 0
+            },
+            "geometry": {
+                "rm climb rate rotor": 1.05,
+                "rm climb rate stator": 1.05,
+                "rotor solidity": 1,
+                "stator solidity": 1,
+                "rotor NOB": 23,
+                "stator NOB": 26
+            }
+        }
+    ],
+    "flags": {
+        "plots": false,
+        "data": false
+    }
+}

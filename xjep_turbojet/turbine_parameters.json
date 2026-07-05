@@ -1,5 +1,4 @@
 {
-    "machine": "turbine",
     "flow": "axial",
     "number of radii": 3,
     "specification": {

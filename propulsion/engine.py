@@ -311,7 +311,6 @@ class Compressor:
             self.power = (self.root_inlet.W*root_delta_ht) + (self.tip_inlet.W*tip_delta_ht)
         else:
             # Compressor
-            machine = cycle_parameters["machine"]
             M_exit = cycle_parameters["exit M"]
             inlet_idx = cycle_parameters["inlet idx"]
             exit_idx = cycle_parameters["exit idx"]
@@ -360,15 +359,53 @@ class Compressor:
 
     def design_component(self, component_parameters):
         self.component_parameters = component_parameters
+        self.num_radii = self.component_parameters["number of radii"]
+        self.PR = self.component_parameters["specification"]["PR"]
+        self.power = self.component_parameters["specification"]["power"]
+        self.rpm = self.component_parameters["rpm"]
+        self.U1t = self.component_parameters["U1t"]
+        self.omega = self.rpm * ((2*numpy.pi/60))
+        self.e_t = self.component_parameters["specification"]["polytropic efficiency"]
+        self.average_dTt = self.component_parameters["average dTt"]
+        self.toggle_solution = self.component_parameters["toggle solution"]
+        self.delta_ht = self.average_dTt * self.component_parameters["specification"]["Cp"]
         flow = component_parameters["flow"]
         match flow:
             case "axial":
                 self.solve_axial()
             case "radial":
                 self.solve_radial()
+        # Ensure odd number of radii (must have a "mid-radius")
+        if self.num_radii % 2 == 0 or self.num_radii < 3: raise ValueError("Number of radii per blade must be odd and greater than 3.")
+
 
     def solve_axial(self):
-        return
+        # Estimate number of stages
+        inlet_Tt = self.component_parameters["specification"]["Tt"]
+        inlet_gamma = self.component_parameters["specification"]["gamma"]
+        TR = self.PR**((inlet_gamma - 1)/inlet_gamma)
+        dTt = inlet_Tt * (TR - 1)
+        self.estimated_num_stages = round(dTt / self.average_dTt)
+        self.stages = list()
+
+        if self.toggle_solution:
+            # Handle stage inlets
+            for idx, parameters in enumerate(self.component_parameters["stages"]):
+                if idx == 0:
+                    W = self.component_parameters["specification"]["W"]
+                    Tt = self.component_parameters["specification"]["Tt"]
+                    Pt = self.component_parameters["specification"]["Pt"]
+                    R = self.component_parameters["specification"]["R"]
+                    gamma = self.component_parameters["specification"]["gamma"]
+                    Cp = self.component_parameters["specification"]["Cp"]
+                    FAR = self.component_parameters["specification"]["FAR"]
+                    M = self.component_parameters["specification"]["M"]
+                    parameters["upstream"] = Station(W, Tt, Pt, FAR=FAR, M=M)
+                else:
+                    # Subsequent stages
+                    parameters["upstream"] = self.stages[idx - 1].stations[3]
+                self.stages.append(AxialStage(idx, "compressor", self))
+
 
     def solve_radial(self):
         return
@@ -518,9 +555,7 @@ class Burner:
         if self.phi_PRZ < 0.8 or self.phi_PRZ > 1.3:
             print('FLAG: phi_PRZ = %.4f outside stable ignition range 0.8-1.3.\n', self.phi_PRZ)
             all_pass = False
-        if all_pass:
-            print('Design passes limitation checks.\n')
-        else:
+        if all_pass == False:
             print("One or more checks failed, so the results have not been saved.")
     
     def solve_canannular(self):
@@ -575,7 +610,6 @@ class Turbine:
         if cycle_parameters != None:
             # CYCLE ANALYSIS
             self.cycle_parameters = cycle_parameters
-            machine = self.cycle_parameters["machine"]
             self.engine = self.cycle_parameters["engine"]
             self.upstream = upstream
             self.compressor = compressor
@@ -616,7 +650,7 @@ class Turbine:
         self.specification = self.component_parameters["specification"]
         self.ER = self.specification["ER"]
         self.power = self.specification["power"]
-        self.rpm = self.specification["rpm"]
+        self.rpm = self.specification["rpm"] # Must ensure this matches the compressor rpm at each operating condition
         self.delta_ht = self.power / self.specification["W"] * 1000
         self.stages = list()
         match flow:
@@ -645,7 +679,7 @@ class Turbine:
             else:
                 # Subsequent stages
                 parameters["upstream"] = self.stages[idx - 1].stations[3]
-            self.stages.append(TurbineStage(idx, self))
+            self.stages.append(AxialStage(idx, "turbine", self))
     
     def solve_radial(self):
         return
@@ -925,6 +959,8 @@ class BladeGeometry:
                 case "compressor":
                     match flow:
                         case "axial":
+                            self.solidity = parameters["solidity"]
+                            self.NOB = parameters["NOB"]
                             match self.blade.lower():
                                 case "stator":
                                     # AXIAL COMPRESSOR STATOR 
@@ -988,7 +1024,7 @@ class BladeGeometry:
         self.taper_ratio = self.cax[-1] / self.cax[0]
         
         # Solidity and Pitch
-        self.solidity = (2/self.zweiffel) * numpy.cos(s2.mid.beta)**2 * (numpy.tan(s2.mid.beta) - numpy.tan(s1.mid.beta))
+        self.solidity = (2/self.zweiffel) * numpy.cos(s3.mid.beta)**2 * (numpy.tan(s3.mid.beta) - numpy.tan(s2.mid.beta))
         self.pitch = self.chord / self.solidity
 
         # Number of Blades
@@ -997,6 +1033,58 @@ class BladeGeometry:
         # Opening
         self.os = numpy.cos(s2.mid.beta)
         self.opening = self.os * self.pitch
+
+    def axial_compressor_rotor(self):
+        # Axial Compressor Rotor 
+        s1 = self.stage.stations[1]
+        s2 = self.stage.stations[2]
+        s3 = self.stage.stations[3]
+        rh_avg = (s1.rhub + s2.rhub) / 2
+        rt_avg = (s1.rtip + s2.rtip) / 2
+        self.HT_ratio = rh_avg / rt_avg
+        self.h = rt_avg - rh_avg
+
+        # Pitch, chord, & AR
+        self.pitch = numpy.ceil((2 * numpy.pi * s1.mid.radius) / self.NOB)
+        self.chord = self.pitch * self.solidity
+        self.AR = self.h / self.chord
+        
+        # Stagger & Axial Chord
+        self.stagger = [(s1.triangles[radius_idx].beta + s2.triangles[radius_idx].beta) / 2 for radius_idx in range(self.stage.compressor.num_radii)]
+        self.cax = [self.chord * numpy.cos(self.stagger[radius_idx]) for radius_idx in range(self.stage.compressor.num_radii)]
+        self.deflections = [s2.triangles[radius_idx].beta - s1.triangles[radius_idx].beta for radius_idx in range(self.stage.compressor.num_radii)]
+        
+        # Taper Ratio
+        self.taper_ratio = self.cax[-1] / self.cax[0]
+        
+        # Solidity and Pitch
+        self.zweiffel = (2/self.solidity) * numpy.cos(s2.mid.beta)**2 * (numpy.tan(s2.mid.beta) - numpy.tan(s1.mid.beta))
+        
+    def axial_compressor_stator(self):
+        # Axial Compressor Rotor 
+        s1 = self.stage.stations[1]
+        s2 = self.stage.stations[2]
+        s3 = self.stage.stations[3]
+        rh_avg = (s2.rhub + s3.rhub) / 2
+        rt_avg = (s2.rtip + s3.rtip) / 2
+        self.HT_ratio = rh_avg / rt_avg
+        self.h = rt_avg - rh_avg
+
+        # Pitch, chord, & AR
+        self.pitch = numpy.ceil((2 * numpy.pi * s2.mid.radius) / self.NOB)
+        self.chord = self.pitch * self.solidity
+        self.AR = self.h / self.chord
+        
+        # Stagger & Axial Chord
+        self.stagger = [(s2.triangles[radius_idx].alpha + s3.triangles[radius_idx].alpha) / 2 for radius_idx in range(self.stage.compressor.num_radii)]
+        self.cax = [self.chord * numpy.cos(self.stagger[radius_idx]) for radius_idx in range(self.stage.compressor.num_radii)]
+        self.deflections = [s3.triangles[radius_idx].alpha - s2.triangles[radius_idx].alpha for radius_idx in range(self.stage.compressor.num_radii)]
+        
+        # Taper Ratio
+        self.taper_ratio = self.cax[-1] / self.cax[0]
+        
+        # Solidity and Pitch
+        self.zweiffel = (2/self.solidity) * numpy.cos(s3.mid.alpha)**2 * (numpy.tan(s3.mid.alpha) - numpy.tan(s2.mid.alpha))
 
     def get_axial_coords(self):
         z_coords = []
@@ -1015,22 +1103,25 @@ class BladeGeometry:
         return z_coords
 
 
-# General stage object to be used for turbines (handles stage calculations, not be used outside of component classes)
-class TurbineStage:
-    def __init__(self, idx, turbine):
+# General axial-stage object to be used for turbines & compressors (handles stage calculations, not be used outside of component classes)
+class AxialStage:
+    def __init__(self, idx, machine, component):
         self.idx = idx
-        self.turbine = turbine
-        self.turbine_parameters = self.turbine.component_parameters
-        self.stage_parameters = self.turbine.component_parameters["stages"][idx]
-        match self.turbine.component_parameters["flow"]: 
-            case "axial":
+        match machine.lower():
+            case "turbine":
                 # AXIAL TURBINE
-                self.solve_axial()
-            case "radial": 
-                # RADIAL TURBINE
-                self.solve_radial()
+                self.turbine = component
+                self.turbine_parameters = self.turbine.component_parameters
+                self.stage_parameters = self.turbine.component_parameters["stages"][idx]
+                self.solve_turbine()
+            case "compressor": 
+                # AXIAL COMPRESSOR
+                self.compressor = component
+                self.compressor_parameters = self.compressor.component_parameters
+                self.stage_parameters = self.compressor.component_parameters["stages"][idx]
+                self.solve_compressor()
 
-    def solve_axial(self):
+    def solve_turbine(self):
         # Load in stage parameters
         self.aerodynamics = self.stage_parameters["aerodynamics"]
         self.geometry = self.stage_parameters["geometry"]
@@ -1118,12 +1209,12 @@ class TurbineStage:
         # Degrees of Reaction (DoR)
         self.DoR = list()
         for radius_idx in range(self.num_radii):
-            self.DoR.append(self.get_DoR(radius_idx))
+            self.DoR.append(self.get_DoR(radius_idx, machine="turbine"))
 
         # Deflections
         self.deflections = list()
         for radius_idx in range(self.num_radii):
-            self.deflections.append(self.get_deflection(radius_idx))
+            self.deflections.append(self.get_deflection(radius_idx, machine="turbine"))
 
         # Expansion Ratio (Inlet Pt / Exit Pt)
         self.ER = self.stations[1].Pt / self.stations[3].Pt
@@ -1133,27 +1224,36 @@ class TurbineStage:
         self.rotor = BladeGeometry(machine="turbine", flow="axial", stage=self, blade="rotor", parameters={"AR": AR_rotor, "zweiffel": zweiffel})
 
         # Cooling
-        self.solve_axial_cooling()
-
-
-    def solve_radial(self): pass
+        self.solve_turbine_cooling()
 
     
-    def get_DoR(self, radius_idx):
-        h2 = self.stations[2].ht - self.stations[2].triangles[radius_idx].V**2/2
-        h3 = self.stations[3].ht - self.stations[3].triangles[radius_idx].V**2/2
+    def get_DoR(self, radius_idx, machine):
         ht1 = self.stations[1].ht
         ht3 = self.stations[3].ht
-        return (h2 - h3) / (ht1 - ht3)
+        match machine.lower():
+            case "turbine":
+                h2 = self.stations[2].ht - self.stations[2].triangles[radius_idx].V**2/2
+                h3 = self.stations[3].ht - self.stations[3].triangles[radius_idx].V**2/2
+                return (h2 - h3) / abs(ht3 - ht1)
+            case "compressor":
+                h2 = self.stations[2].ht - self.stations[2].triangles[radius_idx].V**2/2
+                h1 = self.stations[1].ht - self.stations[1].triangles[radius_idx].V**2/2
+                return (h2 - h1) / abs(ht3 - ht1)
 
 
-    def get_deflection(self, radius_idx):
-        stator_deflection = self.stations[2].triangles[radius_idx].alpha - self.stations[1].triangles[radius_idx].alpha
-        rotor_deflection = self.stations[3].triangles[radius_idx].beta - self.stations[2].triangles[radius_idx].beta
-        return {"stator": stator_deflection, "rotor": rotor_deflection}
+    def get_deflection(self, radius_idx, machine):
+        match machine.lower():
+            case "turbine":
+                stator_deflection = self.stations[2].triangles[radius_idx].alpha - self.stations[1].triangles[radius_idx].alpha
+                rotor_deflection = self.stations[3].triangles[radius_idx].beta - self.stations[2].triangles[radius_idx].beta
+                return {"stator": stator_deflection, "rotor": rotor_deflection}
+            case "compressor":
+                rotor_deflection = self.stations[2].triangles[radius_idx].beta - self.stations[1].triangles[radius_idx].beta
+                stator_deflection = self.stations[3].triangles[radius_idx].alpha - self.stations[2].triangles[radius_idx].alpha
+                return {"rotor": rotor_deflection, "stator": stator_deflection}
 
 
-    def solve_axial_cooling(self):
+    def solve_turbine_cooling(self):
         s1 = self.stations[1]
         s2 = self.stations[2]
         s3 = self.stations[3]
@@ -1215,6 +1315,103 @@ class TurbineStage:
         # Total Stage Cooling
         self.total_mdot_cool = self.stator.mdot_cool + self.rotor.mdot_cool
 
+    
+    def solve_compressor(self):
+        # Load in stage parameters
+        efficiency = self.compressor_parameters["specification"]["polytropic efficiency"]
+        loss_coefficient = self.stage_parameters["aerodynamics"]["loss coefficient"]
+        upstream = self.stage_parameters["upstream"]
+        M3m = self.stage_parameters["aerodynamics"]["exit M"]
+        alpha3m = self.stage_parameters["aerodynamics"]["exit alpha"]
+        Vax2_Vax1 = self.stage_parameters["aerodynamics"]["Vax climb stator"]
+        Vax3_Vax2 = self.stage_parameters["aerodynamics"]["Vax climb rotor"]
+        Rm2_Rm1 = self.stage_parameters["geometry"]["rm climb rate stator"]
+        Rm3_Rm2 = self.stage_parameters["geometry"]["rm climb rate rotor"]
+        solidity_rotor = self.stage_parameters["geometry"]["stator solidity"]
+        solidity_stator = self.stage_parameters["geometry"]["rotor solidity"]
+        NOB_stator = self.stage_parameters["geometry"]["stator NOB"]
+        NOB_rotor = self.stage_parameters["geometry"]["rotor NOB"]
+        dTt = self.stage_parameters["dTt"]
+
+        # Radii & Axial Velocities
+        if self.idx == 0:
+            # First Stage
+            Rt1 = self.compressor.U1t / self.compressor.omega
+            Rh1 = numpy.sqrt(Rt1**2 - upstream.area/numpy.pi)
+            Rm1 = (Rt1 - Rh1) / 2 + Rh1
+            Vax1 = upstream.V
+            alpha1 = self.compressor_parameters["specification"]["alpha"]
+        else:
+            # Subsequent Stages
+            Rm1 = upstream.radii[-1]
+            Vax1 = upstream.mid.Vax
+            alpha1 = upstream.mid.alpha
+        Rm2 = Rm2_Rm1 * Rm1
+        Rm3 = Rm3_Rm2 * Rm2
+        Vax2 = Vax2_Vax1 * Vax1
+        Vax3 = Vax3_Vax2 * Vax2
+        
+        # Stage Quantites
+        self.delta_ht = dTt * upstream.cp
+        self.work_split = self.delta_ht / self.compressor.delta_ht
+        self.capacity = upstream.W * numpy.sqrt(upstream.Tt) / (upstream.Pt / 101.325)
+
+        # Meanline and Radial Calculations (Velocity Triangles)
+        # Station 1
+        W1 = upstream.W
+        Tt1 = upstream.Tt
+        Pt1 = upstream.Pt
+        Vu1m = upstream.V * alpha1
+        mid1 = VelocityTriangle("station 1 mid", Rm1, self.compressor.omega, Vu1m, Vax1, alpha1)
+        s1 = AxialStation(1, W1, Tt1, Pt1, self.compressor.omega, mid=mid1, num_radii=self.compressor.num_radii)
+        s1.T = s1.Tt - s1.mid.V**2/(2*s1.cp)
+        s1.M = numpy.sqrt((2/(s1.gamma - 1)) * (s1.Tt/s1.T) - 1)
+        s1.set_statics()
+        s1.define_velocity_triangles(self.compressor.num_radii)
+
+        # Station 2
+        s2 = copy.deepcopy(s1)
+        s2.idx = 2
+        s2.Tt = s1.Tt + dTt
+        s2.Pt = s1.Pt * (s2.Tt/s1.Tt)**(s2.gamma/(efficiency*(s2.gamma - 1)))
+        Vu2 = (Rm1*self.compressor.omega*s1.mid.Vu - self.delta_ht) / (Rm3*self.compressor.omega) # Euler Turbine Equation
+        alpha2 = numpy.atan(Vu2/Vax2)
+        s2.mid = VelocityTriangle("station 2 mid", Rm2, self.compressor.omega, Vu2, Vax2, alpha2)
+        s2.T = s2.Tt - s2.mid.V**2/(2*s2.cp)
+        s2.M = numpy.sqrt((2/(s2.gamma - 1)) * (s2.Tt/s2.T) - 1)
+        s2.set_statics()
+        s2.define_velocity_triangles()
+
+        # Station 3
+        s3 = copy.deepcopy(s2)
+        s3.idx = 3
+        s3.Pt = s2.Pt - loss_coefficient*(s2.Pt - s2.P)
+        s3.set_statics(M3m)
+        V3 = M3m * numpy.sqrt(s2.gamma * s2.R * s2.T)
+        Vu3 = V3 * numpy.sin(alpha3m)
+        s3.mid = VelocityTriangle("station 3 mid", Rm3, self.compressor.omega, Vu3, Vax3, alpha3m)
+        s3.define_velocity_triangles()
+
+        # Store stations in dictionary object
+        self.stations = {1: s1, 2: s2, 3: s3}
+
+        # Degrees of Reaction (DoR)
+        self.DoR = list()
+        for radius_idx in range(self.compressor.num_radii):
+            self.DoR.append(self.get_DoR(radius_idx, machine="compressor"))
+
+        # Deflections
+        self.deflections = list()
+        for radius_idx in range(self.compressor.num_radii):
+            self.deflections.append(self.get_deflection(radius_idx, machine="compressor"))
+
+        # Expansion Ratio (Inlet Pt / Exit Pt)
+        self.ER = self.stations[1].Pt / self.stations[3].Pt
+
+        # Blade Geometries
+        self.rotor = BladeGeometry(machine="compressor", flow="axial", stage=self, blade="rotor", parameters={"solidity": solidity_rotor, "NOB": NOB_rotor})
+        self.stator = BladeGeometry(machine="compressor", flow="axial", stage=self, blade="stator", parameters={"solidity": solidity_stator, "NOB": NOB_stator})
+
 
     def get_meridional_coordinates(self):
         # Radial Coordinates
@@ -1264,20 +1461,6 @@ class TurbineStage:
             numpy.append(rh, station.radii[0])
             numpy.append(area, station.area)
         return V, Vax, Vu, W, Wu, U, Mabs, Mrel, mdot, Tt, T, Pt, P, rm, rt, rh, area
-
-
-class CompressorStage:
-    def __init__(self, flow, parameters):
-        match flow:
-            case "axial":
-                # AXIAL COMPRESSOR
-                self.solve_axial()
-            case "radial": 
-                # RADIAL COMPRESSOR
-                self.solve_axial()
-    
-    def solve_axial(): pass
-    def solve_radial(): pass
 
 
 class Mixer:
