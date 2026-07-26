@@ -14,29 +14,47 @@ def iterate(function_name, LHS, guess=None, *args):
     error_threshold = 10**-4
     if guess == None: guess = error_threshold
     RHS = function_name(guess, *args)
-    error = (LHS - RHS) / LHS
+    error = (RHS - LHS) / LHS
     while abs(error) > error_threshold:
         if error > 0: guess += error_threshold/2
         elif error < 0: guess -= error_threshold/2
         RHS = function_name(guess, *args)
-        error = (LHS - RHS) / LHS
+        error = (RHS - LHS) / LHS
     return guess
 
 
 # Bisection method (faster than brute force)
-def bisection(function_name, LHS, guess_high, guess_low, *args):
+def bisection(function_name, LHS, guess_high, guess_low, trend, *args):
     error_threshold = 10**-4
     guess_mid = (guess_high + guess_low) / 2
+    flow = function_name(guess_low, *args)
     fmid = function_name(guess_mid, *args)
-    error = (LHS - fmid) / LHS
-
-    while abs(error) > error_threshold:
-        if fmid < LHS: guess_low = guess_mid
-        elif fmid > LHS: guess_high = guess_mid
-
-        guess_mid = (guess_high + guess_low) / 2
-        fmid = function_name(guess_mid, *args)
-        error = (LHS - fmid) / LHS
+    fhigh = function_name(guess_high, *args)
+    match trend:
+        case "increasing":
+            if LHS < flow or LHS > fhigh:
+                raise ValueError("Desired parameter is out of given bounds.")
+            error = (LHS - fmid) / LHS
+            while abs(error) > error_threshold:
+                if fmid < LHS: 
+                    guess_low = guess_mid
+                elif fmid > LHS: 
+                    guess_high = guess_mid
+                guess_mid = (guess_high + guess_low) / 2
+                fmid = function_name(guess_mid, *args)
+                error = (LHS - fmid) / LHS
+        case "decreasing":
+            if LHS > flow or LHS < fhigh:
+                raise ValueError("Desired parameter is out of given bounds.")
+            error = (LHS - fmid) / LHS
+            while abs(error) > error_threshold:
+                if fmid < LHS: 
+                    guess_high = guess_mid
+                elif fmid > LHS: 
+                    guess_low = guess_mid
+                guess_mid = (guess_high + guess_low) / 2
+                fmid = function_name(guess_mid, *args)
+                error = (LHS - fmid) / LHS
     return guess_mid
 
 
@@ -60,35 +78,38 @@ def isentropic(parameter, gamma, lookup_key="M"):
     match lookup_key:
         case "M":
             M = parameter
-            Tt_T = get_Tt_T(parameter)
-            Pt_P = get_Pt_P(parameter)
-            rhot_rho = get_rhot_rho(parameter)
-            A_Astar = get_A_Astar(parameter)
-        case "pressure ratio":
-            M = iterate(Pt_P, parameter)
             Tt_T = get_Tt_T(M)
+            Pt_P = get_Pt_P(M)
+            rhot_rho = get_rhot_rho(M)
+            A_Astar = get_A_Astar(M)
+        case "pressure ratio":
             Pt_P = parameter
+            M = iterate(get_Pt_P, Pt_P)
+            Tt_T = get_Tt_T(M)
             rhot_rho = get_rhot_rho(M)
             A_Astar = get_A_Astar(M)
         case "temperature ratio":
-            M = iterate(Tt_T, parameter)
             Tt_T = parameter
+            M = iterate(get_Tt_T, Tt_T)
             Pt_P = get_Pt_P(M)
             rhot_rho = get_rhot_rho(M)
             A_Astar = get_A_Astar(M)
         case "density ratio":
-            M = iterate(rhot_rho, parameter)
+            rhot_rho = parameter
+            M = iterate(get_rhot_rho, rhot_rho)
             Tt_T = get_Tt_T(M)
             Pt_P = get_Pt_P(M)
-            rhot_rho = parameter
             A_Astar = get_A_Astar(M)
         case "area ratio":
-            M_subsonic, M_supersonic = iterate(A_Astar, parameter)
-            Tt_T = get_Tt_T(M)
-            Pt_P = get_Pt_P(M)
-            rhot_rho = get_rhot_rho(M)
             A_Astar = parameter
-            return [[M_subsonic, M_supersonic], Tt_T, Pt_P, rhot_rho, A_Astar]
+            if A_Astar < 1:
+                raise ValueError("Area ratio cannot be less than 1.")
+            M_subsonic = bisection(get_A_Astar, A_Astar, 1, 0.001, trend="decreasing")
+            #M_supersonic = bisection(get_A_Astar, A_Astar, 10, 1, trend="increasing")
+            Tt_T = get_Tt_T(M_subsonic)
+            Pt_P = get_Pt_P(M_subsonic)
+            rhot_rho = get_rhot_rho(M_subsonic)
+            return [M_subsonic, Tt_T, Pt_P, rhot_rho, A_Astar]
     return [M, Tt_T, Pt_P, rhot_rho, A_Astar]
 
 # A.2
