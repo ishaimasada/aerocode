@@ -18,8 +18,9 @@
     "slip model": "Aungier-Wiesner",
     "shrouded": false,
     "diffuser type": "vaneless",
-    "exit channel type": "return channerl",
+    "exit channel type": "return channel",
     "rpm": 50000,
+    "integration": "bladegen",
     "stages": [
         {
             "aerodynamics": {
@@ -32,9 +33,10 @@
             "geometry": {
                 "impeller NOB": 18,
                 "diffuser NOB": 34,
-                "hub diameter ratio": 0.1,
+                "hub diameter ratio": 0.2,
                 "casing diameter ratio": 0.5,
                 "exit width ratio": 0.1,
+                "impeller height": 0.05,
                 "trailing blade hub thickness": 0.0017,
                 "diffuser width": 0.05
             }

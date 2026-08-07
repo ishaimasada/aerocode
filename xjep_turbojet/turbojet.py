@@ -36,14 +36,8 @@ from engine import * # type: ignore
 
 # CYCLE ANALYSIS
 output_filename = "station_data.xlsx"
-
-# Create an instance of the Engine class
 engine = Engine(engine_parameters) # type: ignore
-
-# Pass the component parameters to the engine object for cycle analysis
 engine.set_components(cycle_parameters)
-
-# Change the current working directory to the file location
 os.chdir(directory)
 
 # COMPONENT DESIGN
@@ -52,3 +46,6 @@ engine.compressor.design_component(compressor_parameters)
 engine.burner.design_component(burner_parameters)
 engine.turbine.design_component(turbine_parameters)
 engine.exhaust.design_component(nozzle_parameters)
+
+# Output Data
+r_coords, z_coords = engine.compressor.output_data()
