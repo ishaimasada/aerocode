@@ -39,6 +39,7 @@ output_filename = "station_data.xlsx"
 engine = Engine(engine_parameters) # type: ignore
 engine.set_components(cycle_parameters)
 os.chdir(directory)
+turbine_parameters["specification"] = engine.turbine.get_specification()
 
 # COMPONENT DESIGN
 engine.inlet.design_component(inlet_parameters)
@@ -47,5 +48,7 @@ engine.burner.design_component(burner_parameters)
 engine.turbine.design_component(turbine_parameters)
 engine.exhaust.design_component(nozzle_parameters)
 
-# Output Data
-r_coords, z_coords = engine.compressor.output_data()
+# Report Results
+r_coords, z_coords = engine.compressor.get_results()
+turbine_velocities, turbine_thermo, turbine_geometry = engine.turbine.get_results(turbine_parameters["flags"])
+burner_thermo, burner_geometry = engine.burner.get_results()

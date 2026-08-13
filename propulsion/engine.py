@@ -424,7 +424,7 @@ class Compressor:
                     parameters["upstream"] = self.stages[idx - 1].stations[3]
             self.stages.append(RadialStage(0, "compressor", self))
 
-    def output_data(self):
+    def get_results(self):
         match self.integration.lower():
             case "cfturbo":
                 pass
@@ -540,16 +540,19 @@ class Burner:
         R = self.component_parameters["R"]
         gamma = self.component_parameters["gamma"]
         FAR = Wf / (W - Wf)
-        self.upstream = Station(W, self.Tt_in, self.Pt_in, FAR=FAR)
-        self.exit = Station(W + Wf, self.Tt_exit, self.Pt_exit)
+        self.inlet = Station(W, self.Tt_in, self.Pt_in, FAR=FAR)
+        self.exit = copy.deepcopy(self.inlet)
+        self.exit.W += Wf
+        self.exit.Tt = self.Tt_exit
+        self.exit.Pt = self.Pt_exit
 
         # Calculations
         self.TR = self.Tt_exit / self.Tt_in
         self.omega_hot = self.K_hot * (self.TR - 1)
         self.omega_ref = self.omega_cold + self.omega_hot
         self.Aref = numpy.sqrt( (R/2) * (W * numpy.sqrt(self.Tt_in) / self.Pt_in)**2 * (self.omega_ref / self.Pt_loss) )
-        # Check if tip radius leads causes area to be smaller than reference area
         if numpy.pi * self.r_tip**2 <= self.Aref:
+            # Check if tip radius leads causes area to be smaller than reference area
             raise ValueError(f"Tip radius is too small. Increase tip radius so that area is less than reference area ({self.Aref}m^2)")
         FAR_stoichiometric = 1 / 15
         self.FAR_overall = Wf / W
@@ -610,7 +613,7 @@ class Burner:
         pass
     
     def get_results(self):
-        results = {
+        thermo = {
             "Inlet Tt": self.Tt_in,
             "Exit Tt": self.Tt_exit,
             "Inlet Pt": self.Pt_in / 1e3,
@@ -625,6 +628,16 @@ class Burner:
             "omega ref": self.omega_ref,
             "dPt/Pt (target)": self.Pt_loss,
             "dPt/Pt (check from Aref)": self.dPt_check,
+            "PRZ": [self.phi_PRZ, self.PRZ_Wa_W],
+            "SEC": [self.phi_SEC, self.SEC_Wa_W],
+            "DIL":  self.DIL_Wa_W,
+            "OTDF": self.OTDF,
+            "Residence time": self.tau_res_ms,
+            "intensity": self.theta_i / 1e6,
+            "loading": self.theta_L,
+            "Combustion efficiency": self.eta_comb
+        }
+        geometry = {
             "Aref": self.Aref,
             "Vref":  self.Vref,
             "qref":  self.q_ref,
@@ -636,18 +649,10 @@ class Burner:
             "liner hub radius": self.liner_r_hub,
             "combustor length": self.length,
             "dl": self.dl,
-            "PRZ": [self.phi_PRZ, self.PRZ_Wa_W],
-            "SEC": [self.phi_SEC, self.SEC_Wa_W],
-            "DIL":  self.DIL_Wa_W,
-            "OTDF": self.OTDF,
             "Volume": self.volume,
-            "Residence time": self.tau_res_ms,
-            "Aheff": self.Aheff,
-            "intensity": self.theta_i / 1e6,
-            "loading": self.theta_L,
-            "Combustion efficiency": self.eta_comb
+            "Aheff": self.Aheff
         }
-        return results
+        return thermo, geometry
 
 
 class Turbine:
@@ -691,11 +696,11 @@ class Turbine:
     def design_component(self, component_parameters):
         self.component_parameters = component_parameters
         flow = self.component_parameters["flow"]
+        self.rpm = self.component_parameters["rpm"] # Must ensure this matches the compressor rpm at each operating condition
         self.component_parameters = self.component_parameters
         self.specification = self.component_parameters["specification"]
         self.ER = self.specification["ER"]
         self.power = self.specification["power"]
-        self.rpm = self.specification["rpm"] # Must ensure this matches the compressor rpm at each operating condition
         self.delta_ht = self.power / self.specification["W"] * 1000
         self.stages = list()
         match flow:
@@ -745,12 +750,12 @@ class Turbine:
                 "gamma": self.inlet.gamma,
                 "Cp": self.inlet.cp,
                 "FAR": self.inlet.FAR
-        },
+        }
         return specification
 
 
-    # Method for Component Design 
-    def display_results(self, flags):
+    # Report Component Design Results (plots and data)
+    def get_results(self, flags):
         if flags["plots"]:
             # Velocity Triangles
             plt_idx = 1
@@ -784,82 +789,39 @@ class Turbine:
             plt.clf()
             '''
         if flags["data"]:
-            velocity_data = pandas.DataFrame(columns=[ "V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "mdot", "Tt", "T", "Pt", "P", "rm", "rt", "rh", "area"])
-            mdot = numpy.array()
-            Tt = numpy.array()
-            T = numpy.array()
-            Pt = numpy.array()
-            P = numpy.array()
-            rm = numpy.array()
-            rt = numpy.array()
-            rh = numpy.array()
-            area = numpy.array()
-            for radius_idx in range(stage.num_radii):
-                V = numpy.array()
-                Vax = numpy.array()
-                Vu = numpy.array()
-                W = numpy.array()
-                Wu = numpy.array()
-                U = numpy.array()
-                Mabs = numpy.array()
-                Mrel = numpy.array()
-                mdot = numpy.array()
-                for stage in self.stages:
-                    # Stage Data
-                    V_stage, Vax_stage, Vu_stage, W_stage, Wu_stage, U_stage, Mabs_stage, Mrel_stage, mdot_stage, Tt_stage, T_stage, Pt_stage, P_stage, rm_stage, rt_stage, rh_stage, area_stage = stage.get_data(radius_idx)
-                    # Velocities
-                    numpy.append(V, V_stage)
-                    numpy.append(Vax, Vax_stage)
-                    numpy.append(Vu, Vu_stage)
-                    numpy.append(W, W_stage)
-                    numpy.append(Wu, Wu_stage)
-                    numpy.append(U, U_stage)
-                    numpy.append(Mabs, Mabs_stage)
-                    numpy.append(Mrel, Mrel_stage)
-                    # Thermodynamics
-                    numpy.append(mdot, mdot_stage)
-                    numpy.append(Tt, Tt_stage)
-                    numpy.append(T, T_stage)
-                    numpy.append(Pt, Pt_stage)
-                    numpy.append(P, P_stage)
-                    # Geometry
-                    numpy.append(rm, rm_stage)
-                    numpy.append(rt, rt_stage)
-                    numpy.append(rh, rh_stage)
-                    numpy.append(area, area_stage)
-                    # Performance
-                    #display_performance(stage, parameters.Specification)
-                if radius_idx == 0:
-                    thermo_data = pandas.DataFrame(
-                        {
-                            "mdot": mdot,
-                            "Tt": Tt,
-                            "T": T,
-                            "Pt": Pt,
-                            "P": P,
-                        }
-                    )
-                    geometry_data = pandas.DataFrame(
-                        {
-                            "rm": rm,
-                            "rt": rt,
-                            "rh": rh,
-                            "area": area
-                        }
-                    )
-                radius_data = pandas.DataFrame(
-                    {
-                        "V": V,
-                        "Vax": Vax,
-                        "Vu": Vu,
-                        "W": W,
-                        "Wu": Wu,
-                        "U": U,
-                        "Mabs": Mabs,
-                        "Mrel": Mrel,
-                    }
-                )
-                numpy.append(velocity_data, radius_data)
+            velocities = {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "T", "P"]}
+            thermo = {key: list() for key in ["mdot", "Tt", "T", "Pt", "P"]}
+            geometry = {key: list() for key in ["rm", "rt", "rh", "area"]}
+            for stage in self.stages:
+                # Stage Data
+                _, stage_thermo, stage_geometry = stage.get_data(int((stage.num_radii-1) / 2))
+                # Thermodynamics
+                thermo["mdot"].append(stage_thermo["mdot"])
+                thermo["Tt"].append(stage_thermo["Tt"])
+                thermo["T"].append(stage_thermo["T"])
+                thermo["Pt"].append(stage_thermo["Pt"])
+                thermo["P"].append(stage_thermo["P"])
+                # Geometry
+                geometry["rm"].append(stage_geometry["rm"])
+                geometry["rt"].append(stage_geometry["rt"])
+                geometry["rh"].append(stage_geometry["rh"])
+                geometry["area"].append(stage_geometry["area"])
+                # Velocities
+                for radius_idx in range(stage.num_radii):
+                    radius_velocities, _, _ = stage.get_data(radius_idx)
+                    velocities["V"].append(radius_velocities["V"])
+                    velocities["Vax"].append(radius_velocities["Vax"])
+                    velocities["Vu"].append(radius_velocities["Vu"])
+                    velocities["W"].append(radius_velocities["W"])
+                    velocities["Wu"].append(radius_velocities["Wu"])
+                    velocities["U"].append(radius_velocities["U"])
+                    velocities["Mabs"].append(radius_velocities["Mabs"])
+                    velocities["Mrel"].append(radius_velocities["Mrel"])
+            return velocities, thermo, geometry
+
+    # Report Componenet Design Performance
+    def display_performance(self):
+        pass
 
 
 # Velocity Triangle for axial turbomachines
@@ -901,6 +863,9 @@ class VelocityTriangle:
         # Mach Numbers
         self.Mabs = Mabs
         self.Mrel = Mrel
+
+        if self.station is not None:
+            self.set_station(self.station)
 
     @property
     def Mabs(self): return self.get_Mabs()
@@ -946,6 +911,11 @@ class VelocityTriangle:
         plt.ylabel('Tangential Velocity [m/s]')
         plt.legend(loc="best")
 
+    def set_station(self, station):
+        self.station = station
+        self.T = self.station.Tt - self.V**2/self.station.cp
+        self.P = self.station.Pt * (self.T / self.station.Tt)**(self.station.gamma/(self.station.gamma - 1))
+
 
 # Stations for axial turbomachines (adds radii and velocity triangles to the engine-flow stations)
 class AxialStation(Station):
@@ -954,8 +924,9 @@ class AxialStation(Station):
         self.mid = mid
         self.omega = omega
         self.num_radii = num_radii
-        self.triangles = []
+        self.triangles = list()
         super().__init__(W, Tt, Pt, FAR=FAR, M=M, idx=idx)
+        self.mid.set_station(self)
         
 
     def set_statics(self, M=None):
@@ -974,12 +945,13 @@ class AxialStation(Station):
     
     # Solve velocity triangles at every radius along the blade
     def define_velocity_triangles(self, num_radii=None):
+        self.triangles.clear()
         if num_radii is not None:
             self.num_radii = num_radii
         self.radii = list(numpy.linspace(self.rhub, self.rtip, self.num_radii, endpoint=True, dtype=float))
         for idx, radius in enumerate(self.radii):
             U = radius * self.omega
-            Vu = self.mid.Vu # Free Vortex Equation
+            Vu = (self.mid.Vu * self.mid.radius) / radius # Free Vortex Equation
             alpha = numpy.atan(Vu / self.mid.Vax)
             label = f"{idx+1} / {num_radii}"
             self.triangles.append(VelocityTriangle(label, radius, self.omega, Vu, self.mid.Vax, alpha, station=self, flow="axial"))
@@ -1212,10 +1184,10 @@ class AxialStage:
         M2m = self.aerodynamics["M2m"]
         U3m = self.aerodynamics["U3m"]
         Vu1m = self.aerodynamics["Vu1m"]
+        Vax2_Vax1 = self.aerodynamics["Vax climb stator"]
+        Vax3_Vax2 = self.aerodynamics["Vax climb rotor"]
         Rm2_Rm1 = self.geometry["rm climb rate stator"]
         Rm3_Rm2 = self.geometry["rm climb rate rotor"]
-        Vax2_Vax1 = self.geometry["Vax climb stator"]
-        Vax3_Vax2 = self.geometry["Vax climb rotor"]
         AR_stator = self.geometry["AR stator"]
         AR_rotor = self.geometry["AR rotor"]
         zweiffel = self.geometry["Zweiffel"]
@@ -1264,6 +1236,7 @@ class AxialStage:
         alpha2 = numpy.acos(Vax2 / V2)
         Vu2 = V2 * numpy.sin(alpha2)
         s2.mid = VelocityTriangle("station 2 mid", Rm2, self.omega, Vu2, Vax2, alpha2, flow="axial")
+        s2.mid.set_station(s2)
         s2.define_velocity_triangles()
 
         # Station 3
@@ -1271,9 +1244,10 @@ class AxialStage:
         s3.idx = 3
         s3.Tt = s2.Tt - self.delta_ht/s2.cp
         s3.Pt = s2.Pt * (s3.Tt/s2.Tt)**(s3.gamma/(efficiency*(s3.gamma - 1)))
-        Vu3 = (Rm2*self.omega*s2.mid.Vu - self.delta_ht) / (Rm3*self.omega) # Euler Turbine Equation
+        Vu3 = (self.delta_ht - Rm2*self.omega*s2.mid.Vu ) / (Rm3*self.omega) # Euler Turbine Equation
         alpha3 = numpy.atan(Vu3/Vax3)
         s3.mid = VelocityTriangle("station 3 mid", Rm3, self.omega, Vu3, Vax3, alpha3, flow="axial")
+        s3.mid.set_station(s3)
         s3.T = s3.Tt - s3.mid.V**2/(2*s3.cp)
         s3.M = numpy.sqrt((2/(s3.gamma - 1)) * (s3.Tt/s3.T) - 1)
         s3.set_statics()
@@ -1391,6 +1365,11 @@ class AxialStage:
         # Total Stage Cooling
         self.total_mdot_cool = self.stator.mdot_cool + self.rotor.mdot_cool
 
+    def get_dehaller(self):
+        pass
+
+    def get_diffusion(self):
+        pass
     
     def solve_compressor(self):
         # Load in stage parameters
@@ -1453,6 +1432,7 @@ class AxialStage:
         Vu2 = (Rm1*self.compressor.omega*s1.mid.Vu - self.delta_ht) / (Rm3*self.compressor.omega) # Euler Turbine Equation
         alpha2 = numpy.atan(Vu2/Vax2)
         s2.mid = VelocityTriangle("station 2 mid", Rm2, self.compressor.omega, Vu2, Vax2, alpha2, flow="axial")
+        s2.mid.set_station(s2)
         s2.T = s2.Tt - s2.mid.V**2/(2*s2.cp)
         s2.M = numpy.sqrt((2/(s2.gamma - 1)) * (s2.Tt/s2.T) - 1)
         s2.set_statics()
@@ -1466,6 +1446,7 @@ class AxialStage:
         V3 = M3m * numpy.sqrt(s2.gamma * s2.R * s2.T)
         Vu3 = V3 * numpy.sin(alpha3m)
         s3.mid = VelocityTriangle("station 3 mid", Rm3, self.compressor.omega, Vu3, Vax3, alpha3m, flow="axial")
+        s3.mid.set_station(s3)
         s3.define_velocity_triangles()
 
         # Store stations in dictionary object
@@ -1499,44 +1480,31 @@ class AxialStage:
         return r_coords, z_coords
 
 
-    # To be used by Turbine component class
     def get_data(self, radius_idx):
-        V = numpy.array()
-        Vax = numpy.array()
-        Vu = numpy.array()
-        W = numpy.array()
-        Wu = numpy.array()
-        U = numpy.array()
-        Mabs = numpy.array()
-        Mrel = numpy.array()
-        mdot = numpy.array()
-        Tt = numpy.array()
-        T = numpy.array()
-        Pt = numpy.array()
-        P = numpy.array()
-        rm = numpy.array()
-        rt = numpy.array()
-        rh = numpy.array()
-        area = numpy.array()
-        for station in self.stations:
-            numpy.append(V, station.triangles[radius_idx].V)
-            numpy.append(Vax, station.triangles[radius_idx].Vax)
-            numpy.append(Vu, station.triangles[radius_idx].Vu)
-            numpy.append(W, station.triangles[radius_idx].W)
-            numpy.append(Wu, station.triangles[radius_idx].Wu)
-            numpy.append(U, station.triangles[radius_idx].U)
-            numpy.append(Mabs, station.triangles[radius_idx].Mabs)
-            numpy.append(Mrel, station.triangles[radius_idx].Mrel)
-            numpy.append(mdot, station.mdot)
-            numpy.append(Tt, station.Tt)
-            numpy.append(T, station.T)
-            numpy.append(Pt, station.Pt)
-            numpy.append(P, station.P)
-            numpy.append(rm, station.mid.radius)
-            numpy.append(rt, station.radii[-1])
-            numpy.append(rh, station.radii[0])
-            numpy.append(area, station.area)
-        return V, Vax, Vu, W, Wu, U, Mabs, Mrel, mdot, Tt, T, Pt, P, rm, rt, rh, area
+        velocities = {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "T", "P"]}
+        thermo = {key: list() for key in ["mdot", "Tt", "T", "Pt", "P"]}
+        geometry = {key: list() for key in ["rm", "rt", "rh", "area"]}
+        for station in self.stations.values():
+            velocities["V"].append(station.triangles[radius_idx].V)
+            velocities["Vax"].append(station.triangles[radius_idx].Vax)
+            velocities["Vu"].append(station.triangles[radius_idx].Vu)
+            velocities["W"].append(station.triangles[radius_idx].W)
+            velocities["Wu"].append(station.triangles[radius_idx].Wu)
+            velocities["U"].append(station.triangles[radius_idx].U)
+            velocities["Mabs"].append(station.triangles[radius_idx].Mabs)
+            velocities["Mrel"].append(station.triangles[radius_idx].Mrel)
+            velocities["T"].append(station.triangles[radius_idx].T)
+            velocities["P"].append(station.triangles[radius_idx].P)
+            thermo["mdot"].append(station.W)
+            thermo["Tt"].append(station.Tt)
+            thermo["Pt"].append(station.Pt)
+            thermo["T"].append(station.mid.T)
+            thermo["P"].append(station.mid.P)
+            geometry["rm"].append(station.mid.radius)
+            geometry["rt"].append(station.radii[-1])
+            geometry["rh"].append(station.radii[0])
+            geometry["area"].append(station.area)
+        return velocities, thermo, geometry
 
 
 # General axial-stage object to be used for turbines & compressors (handles stage calculations, not be used outside of component classes)

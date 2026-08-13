@@ -1,11 +1,11 @@
 {
     "flow": "axial",
     "number of radii": 3,
+    "rpm": 16094,
     "specification": {
             "ER": 2.459639,
             "power": 22.2376,
             "polytropic efficiency": 0.910487,
-            "rpm": 16094,
             "W": 63.2888, 
             "Wc": 7.97,
             "Tt": 1656.96,
@@ -21,6 +21,8 @@
                 "loading coefficient": 2.4,
                 "flow coefficient": 1,
                 "loss coefficient": 0.04, 
+                "Vax climb stator": 1,
+                "Vax climb rotor": 1.2,
                 "M2m": 1, 
                 "U3m": 382.633,
                 "Vu1m": 0
@@ -28,8 +30,6 @@
             "geometry": {
                 "rm climb rate rotor": 1.05,
                 "rm climb rate stator": 1.05,
-                "Vax climb rotor": 1.2,
-                "Vax climb stator": 1,
                 "AR stator": 0.5, 
                 "AR rotor": 0.5,
                 "Zweiffel": 0.8
@@ -45,7 +45,7 @@
         }
     ],
     "flags": {
-        "plots": true,
-        "data": false
+        "plots": false,
+        "data": true
     }
 }
