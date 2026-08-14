@@ -251,18 +251,17 @@ class Inlet:
         self.AR =  self.exit.area / self.inlet.area
         self.CPR = (self.exit.P - self.inlet.P) / (self.inlet.Pt - self.inlet.P)
         self.CPR_ideal = 1 - (1 / self.AR**2)
-        self.radii = self.get_radii()
+        self.radii = self.solve_radii()
         self.N = self.radii[0] * self.N_R
-        self.z_coords = self.get_z_coords()
+        self.z_coords = self.solve_z_coords()
 
-
-    def get_radii(self):
+    def solve_radii(self):
         r1 = numpy.sqrt(self.inlet.area / numpy.pi)
         rth = numpy.sqrt(self.throat.area / numpy.pi)
         r2 = numpy.sqrt(self.exit.area / numpy.pi)
         return [r1, rth, r2]
     
-    def get_z_coords(self):
+    def solve_z_coords(self):
         z1 = 0
         zth = z1 + self.Zth
         z2 = zth + self.N
@@ -279,6 +278,9 @@ class Inlet:
         plt.ylim([0, 0.1])
         #plt.legend()
         plt.show()
+
+    def get_results(self):
+        return list(zip(self.radii, self.z_coords))
 
 
 class Compressor:
@@ -789,7 +791,7 @@ class Turbine:
             plt.clf()
             '''
         if flags["data"]:
-            velocities = {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "T", "P"]}
+            velocities = {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta", "T", "P"]}
             thermo = {key: list() for key in ["mdot", "Tt", "T", "Pt", "P"]}
             geometry = {key: list() for key in ["rm", "rt", "rh", "area"]}
             for stage in self.stages:
@@ -817,6 +819,8 @@ class Turbine:
                     velocities["U"].append(radius_velocities["U"])
                     velocities["Mabs"].append(radius_velocities["Mabs"])
                     velocities["Mrel"].append(radius_velocities["Mrel"])
+                    velocities["alpha"].append(radius_velocities["alpha"])
+                    velocities["beta"].append(radius_velocities["beta"])
             return velocities, thermo, geometry
 
     # Report Componenet Design Performance
@@ -1220,8 +1224,8 @@ class AxialStage:
         Tt1 = self.upstream.Tt
         Pt1 = self.upstream.Pt
         alpha1 = numpy.atan(Vu1m / Vax1)
-        mid1 = VelocityTriangle("station 1 mid", Rm1, self.omega, Vu1m, Vax1, alpha1, flow="axial")
-        s1 = AxialStation(1, W1, Tt1, Pt1, self.omega, mid=mid1, num_radii=self.num_radii)
+        mid1 = VelocityTriangle("station 1 mid", Rm1, 0, Vu1m, Vax1, alpha1, flow="axial")
+        s1 = AxialStation(1, W1, Tt1, Pt1, 0, mid=mid1, num_radii=self.num_radii)
         s1.T = s1.Tt - s1.mid.V**2/(2*s1.cp)
         s1.M = numpy.sqrt((2/(s1.gamma - 1)) * (s1.Tt/s1.T) - 1)
         s1.set_statics()
@@ -1230,6 +1234,7 @@ class AxialStage:
         # Station 2
         s2 = copy.deepcopy(s1)
         s2.idx = 2
+        s2.omega = self.omega
         s2.Pt = s1.Pt - loss_coefficient*(s1.Pt - s1.P)
         s2.set_statics(M2m)
         V2 = M2m * numpy.sqrt(s2.gamma * s2.R * s2.T)
@@ -1242,6 +1247,7 @@ class AxialStage:
         # Station 3
         s3 = copy.deepcopy(s2)
         s3.idx = 3
+        s3.omega = self.omega
         s3.Tt = s2.Tt - self.delta_ht/s2.cp
         s3.Pt = s2.Pt * (s3.Tt/s2.Tt)**(s3.gamma/(efficiency*(s3.gamma - 1)))
         Vu3 = (self.delta_ht - Rm2*self.omega*s2.mid.Vu ) / (Rm3*self.omega) # Euler Turbine Equation
@@ -1481,7 +1487,7 @@ class AxialStage:
 
 
     def get_data(self, radius_idx):
-        velocities = {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "T", "P"]}
+        velocities = {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta","T", "P"]}
         thermo = {key: list() for key in ["mdot", "Tt", "T", "Pt", "P"]}
         geometry = {key: list() for key in ["rm", "rt", "rh", "area"]}
         for station in self.stations.values():
@@ -1493,6 +1499,8 @@ class AxialStage:
             velocities["U"].append(station.triangles[radius_idx].U)
             velocities["Mabs"].append(station.triangles[radius_idx].Mabs)
             velocities["Mrel"].append(station.triangles[radius_idx].Mrel)
+            velocities["alpha"].append(numpy.rad2deg(station.triangles[radius_idx].alpha))
+            velocities["beta"].append(numpy.rad2deg(station.triangles[radius_idx].beta))
             velocities["T"].append(station.triangles[radius_idx].T)
             velocities["P"].append(station.triangles[radius_idx].P)
             thermo["mdot"].append(station.W)
@@ -1940,6 +1948,8 @@ class Nozzle:
                 self.r_inlet = numpy.sqrt(self.inlet.area / numpy.pi)
                 self.r_exit = numpy.sqrt(self.exit.area / numpy.pi)
                 self.length = (self.r_inlet - self.r_exit) / numpy.tan(self.alpha)
+                self.r_coords = [self.r_inlet, self.r_exit]
+                self.z_coords = [0, self.length]
                 match self.type:
                     case "conical":
                         self.CA = (1 + numpy.cos(self.alpha)) / 2
@@ -1955,11 +1965,16 @@ class Nozzle:
                 self.converging_length = (self.r_inlet - self.r_th) / numpy.tan(self.C_alpha)
                 self.diverging_length = (self.r_exit - self.r_th) / numpy.tan(self.CD_alpha)
                 self.total_length = self.converging_length + self.diverging_length
+                self.r_coords = [self.r_inlet, self.r_th, self.r_exit]
+                self.z_coords = [0, self.converging_length, self.total_length]
                 match self.type:
                     case "conical":
                         self.CA = (1 + numpy.cos(self.CD_alpha)) / 2
                     case "rectangular":
                         self.CA = numpy.sin(self.CD_alpha) / self.CD_alpha
+
+    def get_results(self):
+        return list(zip(self.r_coords, self.z_coords))
 
 
 class Recuperator:

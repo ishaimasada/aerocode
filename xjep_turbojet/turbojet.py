@@ -49,6 +49,8 @@ engine.turbine.design_component(turbine_parameters)
 engine.exhaust.design_component(nozzle_parameters)
 
 # Report Results
-r_coords, z_coords = engine.compressor.get_results()
+inlet_coords = engine.inlet.get_results()
+compressor_r_coords, compressor_z_coords = engine.compressor.get_results()
 turbine_velocities, turbine_thermo, turbine_geometry = engine.turbine.get_results(turbine_parameters["flags"])
 burner_thermo, burner_geometry = engine.burner.get_results()
+exhaust_coords = engine.exhaust.get_results()
