@@ -2,7 +2,7 @@
     "parameters":{
         "engine": {
             "spools": 1,
-            "TET": 1510,
+            "TET": 1100,
             "PR": 4,
             "Minf": 0,
             "altitude": 0,

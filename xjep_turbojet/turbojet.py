@@ -1,8 +1,9 @@
 ''' Turbojet engine design for XJEP --> Replaces the role of the JetCats and KingTechs by allowing for easy instrumentation '''
 
-import json
-import sys
-import os
+# Import modules
+import json, sys, os
+sys.path.append(r"..\propulsion")
+from engine import * # type: ignore
 
 # Change the current working directory to the file location
 filepath = os.path.abspath(__file__)
@@ -29,17 +30,13 @@ with open("turbine_parameters.json", "r") as file:
 with open("nozzle_parameters.json", "r") as file:
     nozzle_parameters = json.load(file)
 
-sys.path.append(r"..\propulsion")
-
-# Import all types from engine module
-from engine import * # type: ignore
-
 # CYCLE ANALYSIS
 output_filename = "station_data.xlsx"
 engine = Engine(engine_parameters) # type: ignore
 engine.set_components(cycle_parameters)
 os.chdir(directory)
 turbine_parameters["specification"] = engine.turbine.get_specification()
+engine.write_station_data() 
 
 # COMPONENT DESIGN
 engine.inlet.design_component(inlet_parameters)
@@ -54,3 +51,5 @@ compressor_r_coords, compressor_z_coords = engine.compressor.get_results()
 turbine_velocities, turbine_thermo, turbine_geometry = engine.turbine.get_results(turbine_parameters["flags"])
 burner_thermo, burner_geometry = engine.burner.get_results()
 exhaust_coords = engine.exhaust.get_results()
+
+#print(burner_geometry)

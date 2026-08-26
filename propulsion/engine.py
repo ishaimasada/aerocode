@@ -1,6 +1,6 @@
-""" Module for Cycle Analysis and preliminary component design """
+""" Module for Cycle Analysis and Preliminary Component Design """
 
-#NOTE: Axial Turbomachinery component classes assumes radially-constant work distribution (dht/dr = 0) and Free Vortex Design (dVax/dr = 0)
+#NOTE: Axial Turbomachinery classes assumes radially-constant work distribution (dht/dr = 0) and Free Vortex Design (dVax/dr = 0)
 
 import matplotlib.pyplot as plt
 import pandas
@@ -523,52 +523,52 @@ class Burner:
     # Component Design method
     def solve_annular(self):
         # Design Parameters
-        self.Pt_loss = self.component_parameters["Pt loss"]
         self.omega_cold = self.component_parameters["omega cold"]
         self.K_OTDF = self.component_parameters["K OTDF"]
         self.K_hot = self.component_parameters["K hot"]
         self.liner_area_frac = self.component_parameters["liner area fraction"]
-        self.r_tip = self.component_parameters["r tip"]
+        self.casing_r_outer = self.component_parameters["r tip"]
         self.length = self.component_parameters["combustor length"]
         self.phi_PRZ = self.component_parameters["phi PRZ"]
         self.phi_SEC = self.component_parameters["phi SEC"]
         self.Tt_in = self.component_parameters["inlet Tt"]
-        self.Pt_in = self.component_parameters["inlet Pt"]
+        self.Pt_in = self.component_parameters["inlet Pt"] * 10**3 # convert to Pa for calculations
         self.Tt_exit = self.component_parameters["exit Tt"]
-        self.Pt_exit = self.component_parameters["exit Pt"]
+        self.Pt_exit = self.component_parameters["exit Pt"] * 10**3 # convert to Pa for calculations
         W = self.component_parameters["W"]
         Wf = self.component_parameters["Wf"]
         LHV = self.component_parameters["LHV"]
         R = self.component_parameters["R"]
         gamma = self.component_parameters["gamma"]
         FAR = Wf / (W - Wf)
-        self.inlet = Station(W, self.Tt_in, self.Pt_in, FAR=FAR)
+        self.inlet = Station(W, self.Tt_in, self.Pt_in/10**3, FAR=FAR)
         self.exit = copy.deepcopy(self.inlet)
         self.exit.W += Wf
         self.exit.Tt = self.Tt_exit
-        self.exit.Pt = self.Pt_exit
+        self.exit.Pt = self.Pt_exit/10**3
 
         # Calculations
         self.TR = self.Tt_exit / self.Tt_in
+        self.Pt_loss = (self.inlet.Pt - self.exit.Pt) / self.inlet.Pt
         self.omega_hot = self.K_hot * (self.TR - 1)
         self.omega_ref = self.omega_cold + self.omega_hot
-        self.Aref = numpy.sqrt( (R/2) * (W * numpy.sqrt(self.Tt_in) / self.Pt_in)**2 * (self.omega_ref / self.Pt_loss) )
-        if numpy.pi * self.r_tip**2 <= self.Aref:
+        self.Aref = (W/self.Pt_in) * numpy.sqrt((self.omega_ref * R * self.Tt_in) / (2 * self.Pt_loss)) 
+        if numpy.pi * self.casing_r_outer**2 <= self.Aref:
             # Check if tip radius leads causes area to be smaller than reference area
             raise ValueError(f"Tip radius is too small. Increase tip radius so that area is less than reference area ({self.Aref}m^2)")
         FAR_stoichiometric = 1 / 15
         self.FAR_overall = Wf / W
         self.phi_overall = self.FAR_overall / FAR_stoichiometric
-        self.dPt_check = self.omega_ref * (R/2) * (W * numpy.sqrt(self.Tt_in) / (self.Aref * self.Pt_in))**2
+        self.Pt_loss_check = self.omega_ref * (R/2) * (W * numpy.sqrt(self.Tt_in) / (self.Aref * self.Pt_in))**2
         self.rho_t3 = self.Pt_in / (R * self.Tt_in)
-        self.Vref   = W / (self.rho_t3 * self.Aref)
-        self.q_ref  = 0.5 * self.rho_t3 * self.Vref**2
+        self.Vref = W / (self.rho_t3 * self.Aref)
+        self.q_ref = 0.5 * self.rho_t3 * self.Vref**2
         self.Mref = self.Vref / numpy.sqrt(gamma * R * self.Tt_in)
         self.Aliner = self.liner_area_frac * self.Aref
-        self.r_hub = numpy.sqrt(self.r_tip**2 - self.Aref / numpy.pi)
-        self.dl = (self.r_tip - self.r_hub)
-        self.liner_r_tip = numpy.sqrt(self.Aliner / (2 * numpy.pi)) + (self.r_hub + self.dl/2)
-        self.liner_r_hub = self.liner_r_tip - numpy.sqrt(self.Aliner / (2 * numpy.pi))
+        self.casing_r_inner = numpy.sqrt(self.casing_r_outer**2 - self.Aref / numpy.pi)
+        self.dl = self.casing_r_outer - self.casing_r_inner
+        self.liner_r_outer = numpy.sqrt(self.Aliner / (2 * numpy.pi)) + (self.casing_r_inner + self.dl/2)
+        self.liner_r_inner = self.liner_r_outer - numpy.sqrt(self.Aliner / (2 * numpy.pi))
         self.Wa_PRZ = Wf / (self.phi_PRZ * FAR_stoichiometric)
         self.Wa_to_SEC = Wf / (self.phi_SEC * FAR_stoichiometric)
         self.Wa_SEC = self.Wa_to_SEC - self.Wa_PRZ
@@ -581,32 +581,32 @@ class Burner:
         self.tau_res = self.length / self.Vref
         self.tau_res_ms = self.tau_res * 1000
         Pt3_atm = self.Pt_in / 101325
-        self.theta_i = (Wf * LHV) / (self.volume * Pt3_atm)
+        self.theta_i = (Wf * LHV * 1e-6) / (self.volume * Pt3_atm)
         self.theta_L = W / (self.volume * (Pt3_atm**1.8) * 10**(0.00145 * (self.Tt_in - 400)))
         self.eta_comb = (-5.46974e-10*self.theta_L**5) + (3.97923e-8*self.theta_L**4) - (8.73718e-6*self.theta_L**3) + (3.00007e-4*self.theta_L**2) - (4.568246e-3*self.theta_L) + 99.7
         self.Aheff = self.Aref / numpy.sqrt(self.omega_cold)
         # Check Results 
         all_pass = True
         if self.OTDF > 0.25:
-            print('FLAG: OTDF = %.4f exceeds 0.25. Increase Lcomb or adjust liner sizing.\n', self.OTDF)
+            print(f'FLAG: OTDF = {self.OTDF:.4f} exceeds 0.25. Increase Lcomb or adjust liner sizing.\n')
             all_pass = False
-        if (self.theta_i / 1e6) > 60:
-            print('FLAG: theta_i = %.2f MW/(m^3*atm) exceeds 60 SLS limit. Increase volume.\n', self.theta_i / 1e6)
+        if self.theta_i > 60:
+            print(f'FLAG: theta_i = {self.theta_i:.2f} MW/(m^3*atm) exceeds 60 SLS limit. Increase volume.\n')
             all_pass = False
         if self.theta_L > 5:
-            print('FLAG: theta_L = %.4f exceeds 5 kg/(s*atm^1.8*m^3) SLS stability limit.\n', self.theta_L)
+            print(f'FLAG: theta_L = {self.theta_L:.4f} exceeds 5 kg/(s*atm^1.8*m^3) SLS stability limit.\n')
             all_pass = False
         if self.tau_res_ms < 3:
-            print('FLAG: Residence time = %.3f ms is below 3 ms minimum. Increase Lcomb.\n', self.tau_res_ms)
+            print(f'FLAG: Residence time = {self.tau_res_ms:.3f} ms is below 3 ms minimum. Increase Lcomb.\n')
             all_pass = False
         if self.eta_comb < 95:
-            print('FLAG: Combustion efficiency = %.2f %% below 95%%. Reduce loading or increase volume.\n', self.eta_comb)
+            print(f'FLAG: Combustion efficiency = {self.eta_comb:.2f} %% below 95%%. Reduce loading or increase volume.\n')
             all_pass = False
         if self.phi_PRZ < 0.8 or self.phi_PRZ > 1.3:
-            print('FLAG: phi_PRZ = %.4f outside stable ignition range 0.8-1.3.\n', self.phi_PRZ)
+            print(f'FLAG: phi_PRZ = {self.phi_PRZ:.4f} outside stable ignition range 0.8-1.3.\n')
             all_pass = False
         if all_pass == False:
-            print("One or more checks failed, so the results have not been saved.")
+            print("One or more checks failed. Check log.")
     
     def solve_canannular(self):
         pass
@@ -618,8 +618,8 @@ class Burner:
         thermo = {
             "Inlet Tt": self.Tt_in,
             "Exit Tt": self.Tt_exit,
-            "Inlet Pt": self.Pt_in / 1e3,
-            "Exit Pt": self.Pt_exit / 1e3,
+            "Inlet Pt": self.Pt_in,
+            "Exit Pt": self.Pt_exit,
             "Inlet Mass Flow": self.inlet.W,
             "Fuel Mass Flow": self.exit.Wf,
             "overall FAR": self.FAR_overall,
@@ -629,7 +629,7 @@ class Burner:
             "omega hot": self.omega_hot,
             "omega ref": self.omega_ref,
             "dPt/Pt (target)": self.Pt_loss,
-            "dPt/Pt (check from Aref)": self.dPt_check,
+            "dPt/Pt (check from Aref)": self.Pt_loss_check,
             "PRZ": [self.phi_PRZ, self.PRZ_Wa_W],
             "SEC": [self.phi_SEC, self.SEC_Wa_W],
             "DIL":  self.DIL_Wa_W,
@@ -645,10 +645,10 @@ class Burner:
             "qref":  self.q_ref,
             "Mref": self.Mref,
             "Aliner": self.Aliner,
-            "casing tip radius": self.r_tip,
-            "casing hub radius": self.r_hub,
-            "liner tip radius": self.liner_r_tip,
-            "liner hub radius": self.liner_r_hub,
+            "casing outer radius": self.casing_r_outer,
+            "casing inner radius": self.casing_r_inner,
+            "liner outer radius": self.liner_r_outer,
+            "liner inner radius": self.liner_r_inner,
             "combustor length": self.length,
             "dl": self.dl,
             "Volume": self.volume,
@@ -2183,7 +2183,7 @@ class Engine:
 
 
     # Retrieve flow properties at every station
-    def get_station_data(self): 
+    def write_station_data(self): 
         raw_data = list()
         # Handle Recuperator station data (afterburner is treated like the other components)
         if "recuperator" in self.parameters:
@@ -2210,8 +2210,7 @@ class Engine:
                     
         rounded_data = numpy.round(numpy.array(raw_data, dtype=float), 3).tolist()
         station_data = pandas.DataFrame(rounded_data, columns=Station.column_names)
-        
-        return station_data
+        station_data.to_excel("station_data.xlsx", index=False)
 
     # Plot the temperatures and pressures throughout the whole engine
     def plot_thermo(self):
