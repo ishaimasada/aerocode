@@ -52,4 +52,9 @@ turbine_velocities, turbine_thermo, turbine_geometry = engine.turbine.get_result
 burner_thermo, burner_geometry = engine.burner.get_results()
 exhaust_coords = engine.exhaust.get_results()
 
-#print(burner_geometry)
+# print(burner_geometry)
+# print(engine.turbine.stages[0].DoR)
+# print(engine.turbine.stages[0].stations[1].Tt, engine.turbine.stages[0].stations[1].Pt)
+# print(engine.turbine.rpm, engine.turbine.power)
+# print(engine.turbine.time_to_fracture)
+# print(engine.turbine.AN2)

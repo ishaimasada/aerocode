@@ -712,6 +712,7 @@ class Turbine:
                 self.solve_radial()
 
     def solve_axial(self):
+        # Aerothermal Analysis
         for idx, parameters in enumerate(self.component_parameters["stages"]):
             # Handle the upstream station of each stage
             if idx == 0:
@@ -732,7 +733,11 @@ class Turbine:
                 # Subsequent stages
                 parameters["upstream"] = self.stages[idx - 1].stations[3]
             self.stages.append(AxialStage(idx, "turbine", self))
-    
+        # Structural Analysis
+        if "material" in self.component_parameters:
+            self.material = self.component_parameters["material"]
+            self.solve_lifing()
+
     def solve_radial(self):
         return
 
@@ -754,6 +759,23 @@ class Turbine:
                 "FAR": self.inlet.FAR
         }
         return specification
+
+    def solve_lifing(self, material=None):
+        stage = self.stages[0] # Lifing estimation based on first stage
+        if material is not None:
+            self.material = material
+        y = self.material["y"]
+        x = self.material["x"]
+        density = self.material["density"]
+        # Calculate AN2, capacity, and centrifugal stress
+        self.AN2 = (numpy.pi * (stage.stations[3].rtip**2 - stage.stations[3].rhub**2)) * self.rpm**2 / 1e6 
+        self.capacity = stage.stations[1].W * numpy.sqrt(stage.stations[1].Tt) / (stage.stations[1].Pt / 101.325)
+        sigma_c = self.AN2 * (density * numpy.pi / 3600) * ( 1 + stage.rotor.taper_ratio)
+        # Time-to-Fracture
+        cmsx4_polynomial = numpy.polyfit(x, y, 3)
+        get_LMP = lambda x: numpy.polyval(cmsx4_polynomial, x)
+        self.LMP = get_LMP(sigma_c/10**6)
+        self.time_to_fracture = 10**(self.LMP*(1000/stage.stations[1].Tt) - 20) / 3600 # hrs
 
 
     # Report Component Design Results (plots and data)
@@ -1282,32 +1304,10 @@ class AxialStage:
         # Cooling
         self.solve_turbine_cooling()
 
-    
-    def get_DoR(self, radius_idx, machine):
-        ht1 = self.stations[1].ht
-        ht3 = self.stations[3].ht
-        match machine.lower():
-            case "turbine":
-                h2 = self.stations[2].ht - self.stations[2].triangles[radius_idx].V**2/2
-                h3 = self.stations[3].ht - self.stations[3].triangles[radius_idx].V**2/2
-                return (h2 - h3) / abs(ht3 - ht1)
-            case "compressor":
-                h2 = self.stations[2].ht - self.stations[2].triangles[radius_idx].V**2/2
-                h1 = self.stations[1].ht - self.stations[1].triangles[radius_idx].V**2/2
-                return (h2 - h1) / abs(ht3 - ht1)
-
-
-    def get_deflection(self, radius_idx, machine):
-        match machine.lower():
-            case "turbine":
-                stator_deflection = self.stations[2].triangles[radius_idx].alpha - self.stations[1].triangles[radius_idx].alpha
-                rotor_deflection = self.stations[3].triangles[radius_idx].beta - self.stations[2].triangles[radius_idx].beta
-                return {"stator": stator_deflection, "rotor": rotor_deflection}
-            case "compressor":
-                rotor_deflection = self.stations[2].triangles[radius_idx].beta - self.stations[1].triangles[radius_idx].beta
-                stator_deflection = self.stations[3].triangles[radius_idx].alpha - self.stations[2].triangles[radius_idx].alpha
-                return {"rotor": rotor_deflection, "stator": stator_deflection}
-
+        # Check Results
+        if any(DoR < 0 for DoR in self.DoR):
+            print("Design Error. Check log")
+            #self.write_log(f"Error. One or more Degree of Reactions are negative in stage {self.idx}")
 
     def solve_turbine_cooling(self):
         s1 = self.stations[1]
@@ -1370,12 +1370,20 @@ class AxialStage:
         
         # Total Stage Cooling
         self.total_mdot_cool = self.stator.mdot_cool + self.rotor.mdot_cool
+    
+    def get_DoR(self, radius_idx, machine):
+        ht1 = self.stations[1].ht
+        ht3 = self.stations[3].ht
+        match machine.lower():
+            case "turbine":
+                h2 = self.stations[2].ht - self.stations[2].triangles[radius_idx].V**2/2
+                h3 = self.stations[3].ht - self.stations[3].triangles[radius_idx].V**2/2
+                return (h2 - h3) / abs(ht3 - ht1)
+            case "compressor":
+                h2 = self.stations[2].ht - self.stations[2].triangles[radius_idx].V**2/2
+                h1 = self.stations[1].ht - self.stations[1].triangles[radius_idx].V**2/2
+                return (h2 - h1) / abs(ht3 - ht1)
 
-    def get_dehaller(self):
-        pass
-
-    def get_diffusion(self):
-        pass
     
     def solve_compressor(self):
         # Load in stage parameters
@@ -1468,12 +1476,59 @@ class AxialStage:
         for radius_idx in range(self.compressor.num_radii):
             self.deflections.append(self.get_deflection(radius_idx, machine="compressor"))
 
+        # DeHaller Numbers
+        self.dehaller = list()
+        for radius_idx in range(self.compressor.num_radii):
+            self.dehaller.append(self.get_dehaller(radius_idx))
+
+        # DeHaller Numbers
+        self.diffusion = list()
+        for radius_idx in range(self.compressor.num_radii):
+            self.diffusion.append(self.get_diffusion(radius_idx))
+
         # Expansion Ratio (Inlet Pt / Exit Pt)
         self.ER = self.stations[1].Pt / self.stations[3].Pt
 
         # Blade Geometries
         self.rotor = BladeGeometry(machine="compressor", flow="axial", stage=self, blade="rotor", parameters={"solidity": solidity_rotor, "NOB": NOB_rotor})
         self.stator = BladeGeometry(machine="compressor", flow="axial", stage=self, blade="stator", parameters={"solidity": solidity_stator, "NOB": NOB_stator})
+
+        # Check Results
+        if any(DoR < 0 for DoR in self.DoR):
+            print("Design Error. Check log")
+            #self.write_log(f"Error. One or more Degree of Reactions are negative in stage {self.idx}")
+
+    def get_deflection(self, radius_idx, machine):
+        tri1 = self.stations[1].triangles[radius_idx]
+        tri2 = self.stations[2].triangles[radius_idx]
+        tri3 = self.stations[3].triangles[radius_idx]
+        match machine.lower():
+            case "turbine":
+                stator_deflection = tri2.alpha - tri1.alpha
+                rotor_deflection = tri3.beta - tri2.beta
+                return {"stator": stator_deflection, "rotor": rotor_deflection}
+            case "compressor":
+                rotor_deflection = tri2.beta - tri1.beta
+                stator_deflection = tri3.alpha - tri2.alpha
+                return {"rotor": rotor_deflection, "stator": stator_deflection}
+
+
+    def get_dehaller(self, radius_idx):
+        tri1 = self.stations[1].triangles[radius_idx]
+        tri2 = self.stations[2].triangles[radius_idx]
+        tri3 = self.stations[3].triangles[radius_idx]
+        rotor_dehaller = self.stations[2].triangles[radius_idx].W / self.stations[1].triangles[radius_idx].W
+        stator_dehaller = self.stations[3].triangles[radius_idx].W - self.stations[2].triangles[radius_idx].W
+        return {"rotor": rotor_dehaller, "stator": stator_dehaller}
+
+
+    def get_diffusion(self, radius_idx):
+        tri1 = self.stations[1].triangles[radius_idx]
+        tri2 = self.stations[2].triangles[radius_idx]
+        tri3 = self.stations[3].triangles[radius_idx]
+        rotor_diffusion = 1 - (tri2.W / tri1.W) + (abs(tri2.Wu - tri1.Wu)/(2*tri1.W * self.rotor.solidity))
+        stator_diffusion = 1 - (tri3.W / tri2.W) + (abs(tri3.Wu - tri2.Wu)/(2*tri2.W * self.stator.solidity))
+        return {"rotor": rotor_diffusion, "stator": stator_diffusion}
 
 
     def get_meridional_coordinates(self):
@@ -1979,25 +2034,29 @@ class Nozzle:
 
 class Recuperator:
     def __init__(self, cold_inlet:Station, cycle_parameters, component_parameters=None):
-        self.cyce_parameters = cycle_parameters
-        self.engine = cycle_parameters["engine"]
-        self.Mexit_cold = cycle_parameters["cold exit M"]
-        self.Mexit_hot = cycle_parameters["hot exit M"]
-        self.pi_cold = cycle_parameters["pi_cold"]
-        self.pi_hot = cycle_parameters["pi_hot"]
-        self.delta_ht = cycle_parameters["delta_ht"] * 10**3 # kJ/kg to J/kg
+        if cycle_parameters != None:
+            # CYCLE ANALYSIS
+            self.cycle_parameters = cycle_parameters
+            self.engine = cycle_parameters["engine"]
+            self.Mexit_cold = cycle_parameters["cold exit M"]
+            self.Mexit_hot = cycle_parameters["hot exit M"]
+            self.pi_cold = cycle_parameters["pi_cold"]
+            self.pi_hot = cycle_parameters["pi_hot"]
+            self.delta_ht = cycle_parameters["delta_ht"] * 10**3 # kJ/kg to J/kg
 
-        self.cold_inlet = copy.deepcopy(cold_inlet)
-        self.cold_inlet.idx = "3.06"
-        self.cold_exit = copy.deepcopy(self.cold_inlet)
-        self.cold_exit.idx = "3.07"
-        self.cold_exit.Tt = self.cold_exit.T_from_H(self.cold_inlet.ht+self.delta_ht, self.cold_exit.FAR, 1800, self.cold_inlet.Tt)
-        self.cold_exit.Pt *= self.pi_cold
-        self.cold_exit.M = self.Mexit_cold
-        self.cold_exit.set_statics(self.cold_exit.M)
+            self.cold_inlet = copy.deepcopy(cold_inlet)
+            self.cold_inlet.idx = "3.06"
+            self.cold_exit = copy.deepcopy(self.cold_inlet)
+            self.cold_exit.idx = "3.07"
+            self.cold_exit.Tt = self.cold_exit.T_from_H(self.cold_inlet.ht+self.delta_ht, self.cold_exit.FAR, 1800, self.cold_inlet.Tt)
+            self.cold_exit.Pt *= self.pi_cold
+            self.cold_exit.M = self.Mexit_cold
+            self.cold_exit.set_statics(self.cold_exit.M)
     
-        # COMPONENT DESIGN
-        if component_parameters != None: pass
+        if component_parameters != None:
+            # COMPONENT DESIGN
+            threshold_effectiveness = 0.9
+            threshold_loss = 0.03
 
     def pass_hot_stream(self, hot_upstream):
         self.hot_inlet = hot_upstream
@@ -2008,7 +2067,6 @@ class Recuperator:
         self.hot_exit.Pt *= self.pi_hot
         self.hot_exit.M = self.Mexit_hot
         self.hot_exit.set_statics(self.hot_exit.M)
-
         return self.hot_exit
 
 
