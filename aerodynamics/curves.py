@@ -46,42 +46,35 @@ class Point:
         return numpy.sqrt(self.x_coord**2 + self.y_coord**2 + self.z_coord**2)
 
 
-'''
-Bezier Curve class for curve design
-'''
+''' Bezier Curve class for detailed curve design '''
 class BezierCurve():
-    def __init__(self, control_points, resolution, ps_ss=None):
+    def __init__(self, control_points, resolution):
         self.control_points = control_points
         self.resolution = resolution
-        self.ps_ss = ps_ss
         self.degree = len(self.control_points) - 1
 
     @property
     def positions(self): return self.get_positions()
 
-    def get_positions(self):
+    def get_positions(self, control_points=None):
         ''' Returns positions based on the parameters given '''
-        # Returns the bernstein polynomial coefficient
         def basis_polynomial(parameter, iterator):
+            # Returns the bernstein polynomial coefficient
             binomial_coefficient = math.factorial(self.degree) / (math.factorial(iterator) * math.factorial(self.degree - iterator))
-
             return binomial_coefficient * (parameter**iterator) * ((1 - parameter)**(self.degree - iterator))
-
+        if control_points is not None:
+            self.control_points = control_points
         positions = []
 
         # Iterate Through Each Parameter Step
         for t in numpy.linspace(0, 1, self.resolution):
             position = Point(0, 0)
-
             # Apply the effects of each control point to the parameter
             for idx, point in enumerate(self.control_points):
                 position += point.scalar_mul(basis_polynomial(t, self.degree, idx))
-
             # Store the position
             positions.append(position)
-
         return positions
-
 
     ''' Plots the positions on the curve '''
     def plot_points(self):

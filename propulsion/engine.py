@@ -699,7 +699,7 @@ class Turbine:
         self.component_parameters = component_parameters
         flow = self.component_parameters["flow"]
         self.rpm = self.component_parameters["rpm"] # Must ensure this matches the compressor rpm at each operating condition
-        self.component_parameters = self.component_parameters
+        self.num_radii = self.component_parameters["number of radii"]
         self.specification = self.component_parameters["specification"]
         self.ER = self.specification["ER"]
         self.power = self.specification["power"]
@@ -767,14 +767,13 @@ class Turbine:
         y = self.material["y"]
         x = self.material["x"]
         density = self.material["density"]
-        # Calculate AN2, capacity, and centrifugal stress
-        self.AN2 = (numpy.pi * (stage.stations[3].rtip**2 - stage.stations[3].rhub**2)) * self.rpm**2 / 1e6 
-        self.capacity = stage.stations[1].W * numpy.sqrt(stage.stations[1].Tt) / (stage.stations[1].Pt / 101.325)
-        sigma_c = self.AN2 * (density * numpy.pi / 3600) * ( 1 + stage.rotor.taper_ratio)
-        # Time-to-Fracture
+        # Calculate AN2, capacity, time til fracture, and centrifugal stress
         cmsx4_polynomial = numpy.polyfit(x, y, 3)
+        self.capacity = stage.stations[1].W * numpy.sqrt(stage.stations[1].Tt) / (stage.stations[1].Pt / 101.325)
+        self.AN2 = stage.stations[3].area * self.rpm**2 / 1e6 
+        self.centrifugal_stress = self.AN2 * (density * numpy.pi / 3600) * ( 1 + stage.rotor.taper_ratio) # At blade root
         get_LMP = lambda x: numpy.polyval(cmsx4_polynomial, x)
-        self.LMP = get_LMP(sigma_c/10**6)
+        self.LMP = get_LMP(self.centrifugal_stress/10**6)
         self.time_to_fracture = 10**(self.LMP*(1000/stage.stations[1].Tt) - 20) / 3600 # hrs
 
 
@@ -813,37 +812,59 @@ class Turbine:
             plt.clf()
             '''
         if flags["data"]:
-            velocities = {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta", "T", "P"]}
-            thermo = {key: list() for key in ["mdot", "Tt", "T", "Pt", "P"]}
-            geometry = {key: list() for key in ["rm", "rt", "rh", "area"]}
+            velocity_keys = ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta", "T", "P"]
+            thermo_keys = ["mdot", "Tt", "T", "Pt", "P"]
+            geometry_keys = ["rm", "rt", "rh", "area"]
+            #stage.num_radii
+            raw_velocities = {radius_idx: {key: list() for key in velocity_keys} for radius_idx in range(self.num_radii)}
+            thermo = {key: list() for key in thermo_keys}
+            geometry = {key: list() for key in geometry_keys}
             for stage in self.stages:
                 # Stage Data
-                _, stage_thermo, stage_geometry = stage.get_data(int((stage.num_radii-1) / 2))
+                stage_velocities, stage_thermo, stage_geometry = stage.get_data()
                 # Thermodynamics
-                thermo["mdot"].append(stage_thermo["mdot"])
-                thermo["Tt"].append(stage_thermo["Tt"])
-                thermo["T"].append(stage_thermo["T"])
-                thermo["Pt"].append(stage_thermo["Pt"])
-                thermo["P"].append(stage_thermo["P"])
+                thermo["mdot"].extend(stage_thermo["mdot"])
+                thermo["Tt"].extend(stage_thermo["Tt"])
+                thermo["T"].extend(stage_thermo["T"])
+                thermo["Pt"].extend(stage_thermo["Pt"])
+                thermo["P"].extend(stage_thermo["P"])
                 # Geometry
-                geometry["rm"].append(stage_geometry["rm"])
-                geometry["rt"].append(stage_geometry["rt"])
-                geometry["rh"].append(stage_geometry["rh"])
-                geometry["area"].append(stage_geometry["area"])
+                geometry["rm"].extend(stage_geometry["rm"])
+                geometry["rt"].extend(stage_geometry["rt"])
+                geometry["rh"].extend(stage_geometry["rh"])
+                geometry["area"].extend(stage_geometry["area"])
                 # Velocities
                 for radius_idx in range(stage.num_radii):
-                    radius_velocities, _, _ = stage.get_data(radius_idx)
-                    velocities["V"].append(radius_velocities["V"])
-                    velocities["Vax"].append(radius_velocities["Vax"])
-                    velocities["Vu"].append(radius_velocities["Vu"])
-                    velocities["W"].append(radius_velocities["W"])
-                    velocities["Wu"].append(radius_velocities["Wu"])
-                    velocities["U"].append(radius_velocities["U"])
-                    velocities["Mabs"].append(radius_velocities["Mabs"])
-                    velocities["Mrel"].append(radius_velocities["Mrel"])
-                    velocities["alpha"].append(radius_velocities["alpha"])
-                    velocities["beta"].append(radius_velocities["beta"])
-            return velocities, thermo, geometry
+                    raw_velocities[radius_idx]["V"].extend(stage_velocities[radius_idx]["V"])
+                    raw_velocities[radius_idx]["Vax"].extend(stage_velocities[radius_idx]["Vax"])
+                    raw_velocities[radius_idx]["Vu"].extend(stage_velocities[radius_idx]["Vu"])
+                    raw_velocities[radius_idx]["W"].extend(stage_velocities[radius_idx]["W"])
+                    raw_velocities[radius_idx]["Wu"].extend(stage_velocities[radius_idx]["Wu"])
+                    raw_velocities[radius_idx]["U"].extend(stage_velocities[radius_idx]["U"])
+                    raw_velocities[radius_idx]["Mabs"].extend(stage_velocities[radius_idx]["Mabs"])
+                    raw_velocities[radius_idx]["Mrel"].extend(stage_velocities[radius_idx]["Mrel"])
+                    raw_velocities[radius_idx]["alpha"].extend(stage_velocities[radius_idx]["alpha"])
+                    raw_velocities[radius_idx]["beta"].extend(stage_velocities[radius_idx]["beta"])
+                    raw_velocities[radius_idx]["T"].extend(stage_velocities[radius_idx]["T"])
+                    raw_velocities[radius_idx]["P"].extend(stage_velocities[radius_idx]["P"])
+
+            thermo = pandas.DataFrame(thermo).T
+            geometry = pandas.DataFrame(geometry).T
+            structured_velocities = pandas.DataFrame([])
+            with pandas.ExcelWriter("turbine.xlsx") as writer:
+                # Write all station data for each radius (table of all properties for each radius)
+                structured_velocities.to_excel(writer, sheet_name="velocities")
+                start_row = 0
+                for radius_idx in range(self.num_radii):
+                    radius_data = pandas.DataFrame(raw_velocities[radius_idx]).T
+                    radius_data.insert(0, f"radius {radius_idx}", velocity_keys)
+                    blank_row = pandas.DataFrame(numpy.full(len(radius_data.keys()), ""))
+                    radius_data = pandas.concat([radius_data, blank_row])
+                    radius_data.to_excel(writer, sheet_name="velocities", startrow=start_row, index=False)
+                    start_row += len(radius_data.index)
+                thermo.to_excel(writer, sheet_name="thermo", index=True)
+                geometry.to_excel(writer, sheet_name="geometry", index=True)
+
 
     # Report Componenet Design Performance
     def display_performance(self):
@@ -857,7 +878,6 @@ class VelocityTriangle:
         self.radius = radius
         self.omega = omega
         self.U = self.radius * self.omega
-        self.station = station
         self.alpha = alpha
         self.Vu = Vu
 
@@ -890,8 +910,7 @@ class VelocityTriangle:
         self.Mabs = Mabs
         self.Mrel = Mrel
 
-        if self.station is not None:
-            self.set_station(self.station)
+        self.set_station(station)
 
     @property
     def Mabs(self): return self.get_Mabs()
@@ -939,8 +958,9 @@ class VelocityTriangle:
 
     def set_station(self, station):
         self.station = station
-        self.T = self.station.Tt - self.V**2/self.station.cp
-        self.P = self.station.Pt * (self.T / self.station.Tt)**(self.station.gamma/(self.station.gamma - 1))
+        if station is not None:
+            self.T = self.station.Tt - self.V**2/self.station.cp
+            self.P = self.station.Pt * (self.T / self.station.Tt)**(self.station.gamma/(self.station.gamma - 1))
 
 
 # Stations for axial turbomachines (adds radii and velocity triangles to the engine-flow stations)
@@ -1541,23 +1561,12 @@ class AxialStage:
         return r_coords, z_coords
 
 
-    def get_data(self, radius_idx):
-        velocities = {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta","T", "P"]}
+    def get_data(self):
+        #velocities = {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta","T", "P"]}
+        velocities = {radius_idx: {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta", "T", "P"]} for radius_idx in range(self.num_radii)}
         thermo = {key: list() for key in ["mdot", "Tt", "T", "Pt", "P"]}
         geometry = {key: list() for key in ["rm", "rt", "rh", "area"]}
         for station in self.stations.values():
-            velocities["V"].append(station.triangles[radius_idx].V)
-            velocities["Vax"].append(station.triangles[radius_idx].Vax)
-            velocities["Vu"].append(station.triangles[radius_idx].Vu)
-            velocities["W"].append(station.triangles[radius_idx].W)
-            velocities["Wu"].append(station.triangles[radius_idx].Wu)
-            velocities["U"].append(station.triangles[radius_idx].U)
-            velocities["Mabs"].append(station.triangles[radius_idx].Mabs)
-            velocities["Mrel"].append(station.triangles[radius_idx].Mrel)
-            velocities["alpha"].append(numpy.rad2deg(station.triangles[radius_idx].alpha))
-            velocities["beta"].append(numpy.rad2deg(station.triangles[radius_idx].beta))
-            velocities["T"].append(station.triangles[radius_idx].T)
-            velocities["P"].append(station.triangles[radius_idx].P)
             thermo["mdot"].append(station.W)
             thermo["Tt"].append(station.Tt)
             thermo["Pt"].append(station.Pt)
@@ -1567,6 +1576,19 @@ class AxialStage:
             geometry["rt"].append(station.radii[-1])
             geometry["rh"].append(station.radii[0])
             geometry["area"].append(station.area)
+            for radius_idx in range(self.num_radii):
+                velocities[radius_idx]["V"].append(station.triangles[radius_idx].V)
+                velocities[radius_idx]["Vax"].append(station.triangles[radius_idx].Vax)
+                velocities[radius_idx]["Vu"].append(station.triangles[radius_idx].Vu)
+                velocities[radius_idx]["W"].append(station.triangles[radius_idx].W)
+                velocities[radius_idx]["Wu"].append(station.triangles[radius_idx].Wu)
+                velocities[radius_idx]["U"].append(station.triangles[radius_idx].U)
+                velocities[radius_idx]["Mabs"].append(station.triangles[radius_idx].Mabs)
+                velocities[radius_idx]["Mrel"].append(station.triangles[radius_idx].Mrel)
+                velocities[radius_idx]["alpha"].append(numpy.rad2deg(station.triangles[radius_idx].alpha))
+                velocities[radius_idx]["beta"].append(numpy.rad2deg(station.triangles[radius_idx].beta))
+                velocities[radius_idx]["T"].append(station.triangles[radius_idx].T)
+                velocities[radius_idx]["P"].append(station.triangles[radius_idx].P)
         return velocities, thermo, geometry
 
 

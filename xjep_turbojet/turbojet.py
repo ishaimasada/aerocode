@@ -2,6 +2,7 @@
 
 # Import modules
 import json, sys, os
+
 sys.path.append(r"..\propulsion")
 from engine import * # type: ignore
 
@@ -48,13 +49,6 @@ engine.exhaust.design_component(nozzle_parameters)
 # Report Results
 inlet_coords = engine.inlet.get_results()
 compressor_r_coords, compressor_z_coords = engine.compressor.get_results()
-turbine_velocities, turbine_thermo, turbine_geometry = engine.turbine.get_results(turbine_parameters["flags"])
+engine.turbine.get_results(turbine_parameters["flags"])
 burner_thermo, burner_geometry = engine.burner.get_results()
 exhaust_coords = engine.exhaust.get_results()
-
-# print(burner_geometry)
-# print(engine.turbine.stages[0].DoR)
-# print(engine.turbine.stages[0].stations[1].Tt, engine.turbine.stages[0].stations[1].Pt)
-# print(engine.turbine.rpm, engine.turbine.power)
-# print(engine.turbine.time_to_fracture)
-# print(engine.turbine.AN2)
