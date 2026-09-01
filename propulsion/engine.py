@@ -812,10 +812,9 @@ class Turbine:
             plt.clf()
             '''
         if flags["data"]:
-            velocity_keys = ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta", "T", "P"]
+            velocity_keys = ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta", "T", "P", "reaction"]
             thermo_keys = ["mdot", "Tt", "T", "Pt", "P"]
-            geometry_keys = ["rm", "rt", "rh", "area", "stator NOB", "rotor NOB"]
-            #stage.num_radii
+            geometry_keys = ["rm", "rt", "rh", "area", "stator NOB", "stator cax", "stator cm", "stator stagger", "rotor NOB", "rotor cax", "rotor cm", "rotor stagger"]
             raw_velocities = {radius_idx: {key: list() for key in velocity_keys} for radius_idx in range(self.num_radii)}
             thermo = {key: list() for key in thermo_keys}
             geometry = {key: list() for key in geometry_keys}
@@ -834,7 +833,13 @@ class Turbine:
                 geometry["rm"].extend(stage_geometry["rm"])
                 geometry["area"].extend(stage_geometry["area"])
                 geometry["stator NOB"].extend(stage_geometry["stator NOB"])
+                geometry["stator cax"].extend(stage_geometry["stator cax"])
+                geometry["stator cm"].extend(stage_geometry["stator cm"])
+                geometry["stator stagger"].extend(stage_geometry["stator stagger"])
                 geometry["rotor NOB"].extend(stage_geometry["rotor NOB"])
+                geometry["rotor cax"].extend(stage_geometry["rotor cax"])
+                geometry["rotor cm"].extend(stage_geometry["rotor cm"])
+                geometry["rotor stagger"].extend(stage_geometry["rotor stagger"])
                 # Velocities
                 for radius_idx in range(stage.num_radii):
                     raw_velocities[radius_idx]["V"].extend(stage_velocities[radius_idx]["V"])
@@ -849,6 +854,7 @@ class Turbine:
                     raw_velocities[radius_idx]["beta"].extend(stage_velocities[radius_idx]["beta"])
                     raw_velocities[radius_idx]["T"].extend(stage_velocities[radius_idx]["T"])
                     raw_velocities[radius_idx]["P"].extend(stage_velocities[radius_idx]["P"])
+                    raw_velocities[radius_idx]["reaction"].extend(stage_velocities[radius_idx]["reaction"])
 
             thermo = pandas.DataFrame(thermo).T
             geometry = pandas.DataFrame(geometry).T
@@ -1073,7 +1079,7 @@ class BladeGeometry:
         self.chord = self.h / self.AR
         
         # Stagger and Axial Chord
-        self.stagger = [(s1.triangles[radius_idx].alpha + s2.triangles[radius_idx].alpha) / 2 for radius_idx in range(self.stage.num_radii)]
+        self.stagger = numpy.rad2deg([(s1.triangles[radius_idx].alpha + s2.triangles[radius_idx].alpha) / 2 for radius_idx in range(self.stage.num_radii)])
         self.cax = [self.chord * numpy.cos(self.stagger[radius_idx]) for radius_idx in range(self.stage.num_radii)]
         self.deflections = [s2.triangles[radius_idx].alpha - s1.triangles[radius_idx].alpha for radius_idx in range(self.stage.num_radii)]
         
@@ -1105,7 +1111,7 @@ class BladeGeometry:
         self.chord = self.h / self.AR
         
         # Stagger and Axial Chord
-        self.stagger = [(s2.triangles[radius_idx].beta + s3.triangles[radius_idx].beta) / 2 for radius_idx in range(self.stage.num_radii)]
+        self.stagger = numpy.rad2deg([(s2.triangles[radius_idx].beta + s3.triangles[radius_idx].beta) / 2 for radius_idx in range(self.stage.num_radii)])
         self.cax = [self.chord * numpy.cos(self.stagger[radius_idx]) for radius_idx in range(self.stage.num_radii)]
         self.deflections = [s3.triangles[radius_idx].beta - s2.triangles[radius_idx].beta for radius_idx in range(self.stage.num_radii)]
         
@@ -1256,7 +1262,7 @@ class AxialStage:
             # Subsequent Stages
             Rm1 = self.upstream.radii[-1]
             Vax1 = self.upstream.mid.Vax
-        
+
         # Stage Quantites
         self.delta_ht = psi * (Rm3*self.omega)**2
         self.work_split = self.delta_ht / self.turbine.delta_ht
@@ -1271,7 +1277,7 @@ class AxialStage:
         mid1 = VelocityTriangle("station 1 mid", Rm1, 0, Vu1m, Vax1, alpha1, flow="axial")
         s1 = AxialStation(1, W1, Tt1, Pt1, 0, mid=mid1, num_radii=self.num_radii)
         s1.T = s1.Tt - s1.mid.V**2/(2*s1.cp)
-        s1.M = numpy.sqrt((2/(s1.gamma - 1)) * (s1.Tt/s1.T) - 1)
+        s1.M = numpy.sqrt((2/(s1.gamma - 1)) * ((s1.Tt/s1.T) - 1))
         s1.set_statics()
         s1.define_velocity_triangles(self.num_radii)
 
@@ -1294,7 +1300,7 @@ class AxialStage:
         s3.omega = self.omega
         s3.Tt = s2.Tt - self.delta_ht/s2.cp
         s3.Pt = s2.Pt * (s3.Tt/s2.Tt)**(s3.gamma/(efficiency*(s3.gamma - 1)))
-        Vu3 = (Rm2*self.omega*s2.mid.Vu - self.delta_ht ) / (Rm3*self.omega) # Euler Turbine Equation
+        Vu3 = (Rm2*self.omega*Vu2 - self.delta_ht ) / (Rm3*self.omega) # Euler Turbine Equation
         alpha3 = numpy.atan(Vu3/Vax3)
         s3.mid = VelocityTriangle("station 3 mid", Rm3, self.omega, Vu3, Vax3, alpha3, flow="axial")
         s3.mid.set_station(s3)
@@ -1395,16 +1401,17 @@ class AxialStage:
     
     def get_DoR(self, radius_idx, machine):
         ht1 = self.stations[1].ht
+        ht2 = self.stations[2].ht
         ht3 = self.stations[3].ht
+        h2 = ht2 - self.stations[2].triangles[radius_idx].V**2/2
         match machine.lower():
             case "turbine":
-                h2 = self.stations[2].ht - self.stations[2].triangles[radius_idx].V**2/2
-                h3 = self.stations[3].ht - self.stations[3].triangles[radius_idx].V**2/2
-                return (h2 - h3) / abs(ht3 - ht1)
+                h3 = ht3 - self.stations[3].triangles[radius_idx].V**2/2
+                reaction = (h2 - h3) / abs(ht3 - ht1)
             case "compressor":
-                h2 = self.stations[2].ht - self.stations[2].triangles[radius_idx].V**2/2
-                h1 = self.stations[1].ht - self.stations[1].triangles[radius_idx].V**2/2
-                return (h2 - h1) / abs(ht3 - ht1)
+                h1 = ht1 - self.stations[1].triangles[radius_idx].V**2/2
+                reaction = (h2 - h1) / abs(ht3 - ht1)
+        return reaction
 
     
     def solve_compressor(self):
@@ -1564,18 +1571,23 @@ class AxialStage:
 
 
     def get_data(self):
-        #velocities = {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta","T", "P"]}
-        velocities = {radius_idx: {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta", "T", "P"]} for radius_idx in range(self.num_radii)}
+        velocities = {radius_idx: {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta", "T", "P", "reaction"]} for radius_idx in range(self.num_radii)}
         thermo = {key: list() for key in ["mdot", "Tt", "T", "Pt", "P"]}
-        geometry = {key: list() for key in ["rm", "rt", "rh", "area", "stator NOB", "rotor NOB"]}
+        geometry = {key: list() for key in ["rm", "rt", "rh", "area", "stator NOB", "stator cax", "stator cm", "stator stagger", "rotor NOB", "rotor cax", "rotor cm", "rotor stagger"]}
         geometry["stator NOB"] = numpy.full(3, self.stator.NOB)
+        geometry["stator cax"] = numpy.full(3, self.stator.cax)
+        geometry["stator cm"] = numpy.full(3, self.stator.chord)
+        geometry["stator stagger"] = numpy.full(3, self.stator.stagger)
         geometry["rotor NOB"] = numpy.full(3, self.rotor.NOB)
+        geometry["rotor cax"] = numpy.full(3, self.rotor.cax)
+        geometry["rotor cm"] = numpy.full(3, self.rotor.chord)
+        geometry["rotor stagger"] = numpy.full(3, self.rotor.stagger)
         for station in self.stations.values():
             thermo["mdot"].append(station.W)
             thermo["Tt"].append(station.Tt)
-            thermo["Pt"].append(station.Pt)
+            thermo["Pt"].append(station.Pt/10**3)
             thermo["T"].append(station.mid.T)
-            thermo["P"].append(station.mid.P)
+            thermo["P"].append(station.mid.P/10**3)
             geometry["rm"].append(station.mid.radius)
             geometry["rt"].append(station.radii[-1])
             geometry["rh"].append(station.radii[0])
@@ -1592,7 +1604,8 @@ class AxialStage:
                 velocities[radius_idx]["alpha"].append(numpy.rad2deg(station.triangles[radius_idx].alpha))
                 velocities[radius_idx]["beta"].append(numpy.rad2deg(station.triangles[radius_idx].beta))
                 velocities[radius_idx]["T"].append(station.triangles[radius_idx].T)
-                velocities[radius_idx]["P"].append(station.triangles[radius_idx].P)
+                velocities[radius_idx]["P"].append(station.triangles[radius_idx].P/10**3)
+                velocities[radius_idx]["reaction"].append(self.DoR[radius_idx])
         return velocities, thermo, geometry
 
 

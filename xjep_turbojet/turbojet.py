@@ -36,7 +36,6 @@ cycle_filename = "cycle.xlsx"
 engine = Engine(engine_parameters) # type: ignore
 engine.set_components(cycle_parameters)
 os.chdir(directory)
-turbine_parameters["specification"] = engine.turbine.get_specification()
 engine.write_station_data(cycle_filename) 
 
 # COMPONENT DESIGN

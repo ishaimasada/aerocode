@@ -1,24 +1,24 @@
 {
     "flow": "axial",
     "number of radii": 3,
-    "rpm": 16094,
+    "rpm": 50000,
     "specification": {
-            "ER": 2.459639,
-            "power": 22.2376,
-            "polytropic efficiency": 0.910487,
-            "W": 63.2888, 
-            "Wc": 7.97,
-            "Tt": 1656.96,
-            "Pt": 1917.97,
+            "ER": 1.81924,
+            "power": 88.4416,
+            "polytropic efficiency": 0.95,
+            "W": 0.53931, 
+            "Wc": 0.2827419,
+            "Tt": 1100,
+            "Pt": 377617.07,
             "R": 287.04975,
-            "gamma": 1.2919,
-            "Cp": 1270.4,
-            "FAR": 0.02529046
+            "gamma": 1.316839,
+            "Cp": 1193.03,
+            "FAR": 0.01725685
     },
     "stages": [
         {
             "aerodynamics": {
-                "loading coefficient": 2.4,
+                "loading coefficient": 1.8,
                 "flow coefficient": 1,
                 "loss coefficient": 0.04, 
                 "Vax climb stator": 1,
@@ -30,8 +30,8 @@
             "geometry": {
                 "rm climb rate rotor": 1.05,
                 "rm climb rate stator": 1.05,
-                "AR stator": 0.5, 
-                "AR rotor": 0.5,
+                "AR stator": 1.5, 
+                "AR rotor": 2.27,
                 "Zweiffel": 0.8
             },
             "cooling": {
