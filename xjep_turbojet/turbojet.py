@@ -32,12 +32,12 @@ with open("nozzle_parameters.json", "r") as file:
     nozzle_parameters = json.load(file)
 
 # CYCLE ANALYSIS
-output_filename = "station_data.xlsx"
+cycle_filename = "cycle.xlsx"
 engine = Engine(engine_parameters) # type: ignore
 engine.set_components(cycle_parameters)
 os.chdir(directory)
 turbine_parameters["specification"] = engine.turbine.get_specification()
-engine.write_station_data() 
+engine.write_station_data(cycle_filename) 
 
 # COMPONENT DESIGN
 engine.inlet.design_component(inlet_parameters)

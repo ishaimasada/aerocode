@@ -814,7 +814,7 @@ class Turbine:
         if flags["data"]:
             velocity_keys = ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta", "T", "P"]
             thermo_keys = ["mdot", "Tt", "T", "Pt", "P"]
-            geometry_keys = ["rm", "rt", "rh", "area"]
+            geometry_keys = ["rm", "rt", "rh", "area", "stator NOB", "rotor NOB"]
             #stage.num_radii
             raw_velocities = {radius_idx: {key: list() for key in velocity_keys} for radius_idx in range(self.num_radii)}
             thermo = {key: list() for key in thermo_keys}
@@ -829,10 +829,12 @@ class Turbine:
                 thermo["Pt"].extend(stage_thermo["Pt"])
                 thermo["P"].extend(stage_thermo["P"])
                 # Geometry
-                geometry["rm"].extend(stage_geometry["rm"])
-                geometry["rt"].extend(stage_geometry["rt"])
                 geometry["rh"].extend(stage_geometry["rh"])
+                geometry["rt"].extend(stage_geometry["rt"])
+                geometry["rm"].extend(stage_geometry["rm"])
                 geometry["area"].extend(stage_geometry["area"])
+                geometry["stator NOB"].extend(stage_geometry["stator NOB"])
+                geometry["rotor NOB"].extend(stage_geometry["rotor NOB"])
                 # Velocities
                 for radius_idx in range(stage.num_radii):
                     raw_velocities[radius_idx]["V"].extend(stage_velocities[radius_idx]["V"])
@@ -1111,7 +1113,7 @@ class BladeGeometry:
         self.taper_ratio = self.cax[-1] / self.cax[0]
         
         # Solidity and Pitch
-        self.solidity = (2/self.zweiffel) * numpy.cos(s3.mid.beta)**2 * (numpy.tan(s3.mid.beta) - numpy.tan(s2.mid.beta))
+        self.solidity = (2/self.zweiffel) * numpy.cos(s3.mid.beta)**2 * (numpy.tan(s2.mid.beta) - numpy.tan(s3.mid.beta))
         self.pitch = self.chord / self.solidity
 
         # Number of Blades
@@ -1292,7 +1294,7 @@ class AxialStage:
         s3.omega = self.omega
         s3.Tt = s2.Tt - self.delta_ht/s2.cp
         s3.Pt = s2.Pt * (s3.Tt/s2.Tt)**(s3.gamma/(efficiency*(s3.gamma - 1)))
-        Vu3 = (self.delta_ht - Rm2*self.omega*s2.mid.Vu ) / (Rm3*self.omega) # Euler Turbine Equation
+        Vu3 = (Rm2*self.omega*s2.mid.Vu - self.delta_ht ) / (Rm3*self.omega) # Euler Turbine Equation
         alpha3 = numpy.atan(Vu3/Vax3)
         s3.mid = VelocityTriangle("station 3 mid", Rm3, self.omega, Vu3, Vax3, alpha3, flow="axial")
         s3.mid.set_station(s3)
@@ -1565,7 +1567,9 @@ class AxialStage:
         #velocities = {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta","T", "P"]}
         velocities = {radius_idx: {key: list() for key in ["V", "Vax", "Vu", "W", "Wu", "U", "Mabs", "Mrel", "alpha", "beta", "T", "P"]} for radius_idx in range(self.num_radii)}
         thermo = {key: list() for key in ["mdot", "Tt", "T", "Pt", "P"]}
-        geometry = {key: list() for key in ["rm", "rt", "rh", "area"]}
+        geometry = {key: list() for key in ["rm", "rt", "rh", "area", "stator NOB", "rotor NOB"]}
+        geometry["stator NOB"] = numpy.full(3, self.stator.NOB)
+        geometry["rotor NOB"] = numpy.full(3, self.rotor.NOB)
         for station in self.stations.values():
             thermo["mdot"].append(station.W)
             thermo["Tt"].append(station.Tt)
@@ -2263,7 +2267,7 @@ class Engine:
 
 
     # Retrieve flow properties at every station
-    def write_station_data(self): 
+    def write_station_data(self, filename): 
         raw_data = list()
         # Handle Recuperator station data (afterburner is treated like the other components)
         if "recuperator" in self.parameters:
@@ -2290,7 +2294,7 @@ class Engine:
                     
         rounded_data = numpy.round(numpy.array(raw_data, dtype=float), 3).tolist()
         station_data = pandas.DataFrame(rounded_data, columns=Station.column_names)
-        station_data.to_excel("station_data.xlsx", index=False)
+        station_data.to_excel(filename, index=False)
 
     # Plot the temperatures and pressures throughout the whole engine
     def plot_thermo(self):
